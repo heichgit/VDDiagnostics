@@ -1,0 +1,19 @@
+{
+  "name": "vddiagnostics-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "func start"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.6.0",
+    "@azure/storage-blob": "^12.26.0",
+    "busboy": "^1.6.0",
+    "openai": "^4.77.0"
+  }
+}
