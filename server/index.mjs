@@ -105,6 +105,19 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+app.post("/api/auth/me", (req, res) => {
+  const raw = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!raw) {
+    return res.status(401).json({ error: "Se requiere el campo token en el cuerpo JSON" });
+  }
+  try {
+    const auth = verifyToken(raw);
+    return res.json({ id: auth.sub, email: auth.email, roles: auth.roles });
+  } catch {
+    return res.status(401).json({ error: "Token inválido o expirado" });
+  }
+});
+
 app.get("/api/auth/me", requireAuth, (req, res) => {
   res.json({
     id: req.auth.sub,

@@ -1,5 +1,5 @@
 import { app } from "@azure/functions";
-import { signToken, getAuthFromRequest } from "../lib/jwt.js";
+import { signToken, getAuthFromRequest, verifyToken } from "../lib/jwt.js";
 import { verifyCredentials, bootstrapAdminIfEmpty } from "../lib/usersBlob.js";
 import { getStorageConnectionString, storageMissingResponse } from "../lib/storageConnection.js";
 
@@ -50,13 +50,47 @@ app.http("authLogin", {
 });
 
 app.http("authMe", {
-  methods: ["GET"],
+  methods: ["GET", "POST"],
   authLevel: "anonymous",
   route: "auth/me",
   handler: async (request, context) => {
+    /** Token en cuerpo: evita proxies (p. ej. SWA) que no reenvían Authorization en GET. */
+    if (request.method === "POST") {
+      try {
+        const body = await request.json();
+        const raw = typeof body?.token === "string" ? body.token.trim() : "";
+        if (raw) {
+          try {
+            const auth = verifyToken(raw);
+            return {
+              status: 200,
+              jsonBody: { id: auth.sub, email: auth.email, roles: auth.roles },
+              headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+            };
+          } catch (e) {
+            context.log(`[authMe] JWT inválido en body: ${e?.message || e}`);
+            return { status: 401, jsonBody: { error: "Token inválido o expirado" } };
+          }
+        }
+      } catch {
+        return { status: 400, jsonBody: { error: "JSON inválido (se esperaba { token })" } };
+      }
+      return {
+        status: 401,
+        jsonBody: { error: "En el POST se requiere un string no vacío en el campo token" },
+      };
+    }
+
     const auth = getAuthFromRequest(request);
     if (!auth) {
-      return { status: 401, jsonBody: { error: "Se requiere autenticación" } };
+      return {
+        status: 401,
+        jsonBody: {
+          error: "Se requiere autenticación",
+          detalle:
+            "Enviá POST /api/auth/me con JSON { \"token\": \"<jwt>\" } si el navegador no envía la cabecera Authorization.",
+        },
+      };
     }
     return {
       status: 200,

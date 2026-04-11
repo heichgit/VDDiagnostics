@@ -67,11 +67,13 @@ async function fetchMe(sessionToken?: string | null): Promise<{ user: User | nul
   const t = (sessionToken ?? getToken())?.trim();
   if (!t) return { user: null, hint: "Sin token de sesión" };
 
-  const headers = new Headers();
-  headers.set("Authorization", `Bearer ${t}`);
-  headers.set("X-VDD-Token", t);
-
-  const res = await fetch("/api/auth/me", { headers, cache: "no-store" });
+  /** POST + token en JSON: Static Web Apps a veces no reenvía Authorization en GET hacia Functions. */
+  const res = await fetch("/api/auth/me", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: t }),
+    cache: "no-store",
+  });
   const text = await res.text();
   if (!res.ok) {
     let hint = `HTTP ${res.status}`;
