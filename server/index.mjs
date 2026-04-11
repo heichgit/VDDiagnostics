@@ -6,6 +6,14 @@ import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
 import OpenAI, { toFile } from "openai";
+import {
+  canReadDiagnosticos,
+  canTranscribe,
+  canWriteDiagnostico,
+  canManageUsers,
+} from "./lib/roles.mjs";
+import { signToken, verifyToken } from "./lib/jwt.mjs";
+import * as users from "./lib/usersStore.mjs";
 
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env") });
 
@@ -23,6 +31,19 @@ const upload = multer({
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+
+function requireAuth(req, res, next) {
+  const h = req.headers.authorization;
+  if (!h?.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Se requiere autenticación" });
+  }
+  try {
+    req.auth = verifyToken(h.slice(7));
+    next();
+  } catch {
+    return res.status(401).json({ error: "Sesión inválida o expirada" });
+  }
+}
 
 async function ensureDataFile() {
   await fs.mkdir(DATA_DIR, { recursive: true });
@@ -49,7 +70,75 @@ async function writeDiagnoses(list) {
   await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
 }
 
-app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: "Servidor sin JWT_SECRET configurado" });
+    }
+    const email = String(req.body?.email ?? "").trim();
+    const password = String(req.body?.password ?? "");
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email y contraseña requeridos" });
+    }
+    const user = await users.verifyCredentials(email, password);
+    if (!user) {
+      return res.status(401).json({ error: "Credenciales incorrectas" });
+    }
+    const token = signToken({ sub: user.id, email: user.email, roles: user.roles });
+    return res.json({
+      token,
+      user: { id: user.id, email: user.email, roles: user.roles },
+    });
+  } catch (e) {
+    console.error("[login]", e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.get("/api/auth/me", requireAuth, (req, res) => {
+  res.json({
+    id: req.auth.sub,
+    email: req.auth.email,
+    roles: req.auth.roles,
+  });
+});
+
+app.get("/api/users", requireAuth, async (req, res) => {
+  if (!canManageUsers(req.auth.roles)) {
+    return res.status(403).json({ error: "Sin permiso para administrar usuarios" });
+  }
+  try {
+    const list = await users.listUsersPublic();
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.post("/api/users", requireAuth, async (req, res) => {
+  if (!canManageUsers(req.auth.roles)) {
+    return res.status(403).json({ error: "Sin permiso para administrar usuarios" });
+  }
+  try {
+    const created = await users.createUser({
+      email: req.body?.email,
+      password: req.body?.password,
+      roles: req.body?.roles,
+    });
+    res.status(201).json(created);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const code = msg.includes("ya está") ? 409 : 400;
+    res.status(code).json({ error: msg });
+  }
+});
+
+app.post("/api/transcribe", requireAuth, (req, res, next) => {
+  if (!canTranscribe(req.auth.roles)) {
+    return res.status(403).json({ error: "Sin permiso para transcripción por voz (se requieren roles usuario y transcripcion)" });
+  }
+  next();
+}, upload.single("audio"), async (req, res) => {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
     return res.status(500).json({ error: "Falta OPENAI_API_KEY en .env" });
@@ -78,7 +167,10 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
   }
 });
 
-app.get("/api/diagnosticos", async (_req, res) => {
+app.get("/api/diagnosticos", requireAuth, async (req, res) => {
+  if (!canReadDiagnosticos(req.auth.roles)) {
+    return res.status(403).json({ error: "Sin permiso para ver diagnósticos" });
+  }
   try {
     const list = await readDiagnoses();
     res.json(list);
@@ -87,7 +179,10 @@ app.get("/api/diagnosticos", async (_req, res) => {
   }
 });
 
-app.post("/api/diagnosticos", async (req, res) => {
+app.post("/api/diagnosticos", requireAuth, async (req, res) => {
+  if (!canWriteDiagnostico(req.auth.roles)) {
+    return res.status(403).json({ error: "Sin permiso para crear diagnósticos" });
+  }
   const {
     pacienteRef = "",
     estudioTipo = "",
@@ -130,6 +225,7 @@ if (isProd) {
 }
 
 await ensureDataFile();
+await users.bootstrapAdminIfEmpty();
 app.listen(PORT, () => {
   console.log(`API en http://127.0.0.1:${PORT}`);
   if (isProd) console.log(`Sirviendo estáticos desde ${DIST}`);

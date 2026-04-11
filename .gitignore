@@ -2,5 +2,6 @@ node_modules/
 dist/
 .env
 data/diagnosticos.json
+data/users.json
 api/local.settings.json
 api/node_modules/

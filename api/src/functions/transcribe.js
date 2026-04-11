@@ -1,6 +1,8 @@
 import { app } from "@azure/functions";
 import busboy from "busboy";
 import OpenAI, { toFile } from "openai";
+import { getAuthFromRequest } from "../lib/jwt.js";
+import { canTranscribe } from "../lib/roles.js";
 
 /**
  * @param {Buffer} buffer
@@ -42,6 +44,19 @@ app.http("transcribe", {
   authLevel: "anonymous",
   route: "transcribe",
   handler: async (request, context) => {
+    const auth = getAuthFromRequest(request);
+    if (!auth) {
+      return { status: 401, jsonBody: { error: "Se requiere autenticación" } };
+    }
+    if (!canTranscribe(auth.roles)) {
+      return {
+        status: 403,
+        jsonBody: {
+          error: "Sin permiso para transcripción por voz (se requieren roles usuario y transcripcion, o admin)",
+        },
+      };
+    }
+
     const key = process.env.OPENAI_API_KEY;
     if (!key) {
       return { status: 500, jsonBody: { error: "Falta OPENAI_API_KEY en la configuración de Azure" } };

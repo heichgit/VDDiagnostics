@@ -13,7 +13,9 @@
   "dependencies": {
     "@azure/functions": "^4.6.0",
     "@azure/storage-blob": "^12.26.0",
+    "bcryptjs": "^2.4.3",
     "busboy": "^1.6.0",
+    "jsonwebtoken": "^9.0.2",
     "openai": "^4.77.0"
   }
 }

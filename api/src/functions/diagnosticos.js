@@ -1,12 +1,19 @@
 import { app } from "@azure/functions";
 import { randomUUID } from "node:crypto";
 import { readDiagnosticos, writeDiagnosticos } from "../lib/blobDiagnosticos.js";
+import { getAuthFromRequest } from "../lib/jwt.js";
+import { canReadDiagnosticos, canWriteDiagnostico } from "../lib/roles.js";
 
 app.http("diagnosticos", {
   methods: ["GET", "POST"],
   authLevel: "anonymous",
   route: "diagnosticos",
   handler: async (request, context) => {
+    const auth = getAuthFromRequest(request);
+    if (!auth) {
+      return { status: 401, jsonBody: { error: "Se requiere autenticación" } };
+    }
+
     const storage = process.env.AzureWebJobsStorage;
     if (!storage) {
       return {
@@ -16,6 +23,9 @@ app.http("diagnosticos", {
     }
 
     if (request.method === "GET") {
+      if (!canReadDiagnosticos(auth.roles)) {
+        return { status: 403, jsonBody: { error: "Sin permiso para ver diagnósticos" } };
+      }
       try {
         const list = await readDiagnosticos(storage);
         return { jsonBody: list };
@@ -23,6 +33,10 @@ app.http("diagnosticos", {
         context.error("[diagnosticos GET]", e);
         return { status: 500, jsonBody: { error: String(e?.message || e) } };
       }
+    }
+
+    if (!canWriteDiagnostico(auth.roles)) {
+      return { status: 403, jsonBody: { error: "Sin permiso para crear diagnósticos" } };
     }
 
     /** @type {Record<string, unknown>} */
