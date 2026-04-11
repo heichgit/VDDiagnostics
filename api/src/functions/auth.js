@@ -1,15 +1,16 @@
 import { app } from "@azure/functions";
 import { signToken, getAuthFromRequest } from "../lib/jwt.js";
 import { verifyCredentials, bootstrapAdminIfEmpty } from "../lib/usersBlob.js";
+import { getStorageConnectionString, storageMissingResponse } from "../lib/storageConnection.js";
 
 app.http("authLogin", {
   methods: ["POST"],
   authLevel: "anonymous",
   route: "auth/login",
   handler: async (request, context) => {
-    const storage = process.env.AzureWebJobsStorage;
+    const storage = getStorageConnectionString();
     if (!storage) {
-      return { status: 503, jsonBody: { error: "Storage no configurado" } };
+      return storageMissingResponse();
     }
     if (!process.env.JWT_SECRET) {
       return { status: 500, jsonBody: { error: "JWT_SECRET no configurado en Application settings" } };

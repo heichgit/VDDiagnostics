@@ -44,8 +44,11 @@ async function loginRequest(email: string, password: string): Promise<{ ok: bool
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) return { ok: false, error: data.error || "Error de inicio de sesión" };
+  const data = (await res.json().catch(() => ({}))) as { error?: string; detalle?: string };
+  if (!res.ok) {
+    const msg = [data.error, data.detalle].filter(Boolean).join(" — ");
+    return { ok: false, error: msg || "Error de inicio de sesión" };
+  }
   if (typeof data.token === "string") setToken(data.token);
   else return { ok: false, error: "Respuesta inválida" };
   return { ok: true };

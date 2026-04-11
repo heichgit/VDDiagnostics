@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { getAuthFromRequest } from "../lib/jwt.js";
 import { canManageUsers } from "../lib/roles.js";
 import { bootstrapAdminIfEmpty, createUser, listUsersPublic } from "../lib/usersBlob.js";
+import { getStorageConnectionString, storageMissingResponse } from "../lib/storageConnection.js";
 
 app.http("usersMgmt", {
   methods: ["GET", "POST"],
@@ -16,9 +17,9 @@ app.http("usersMgmt", {
       return { status: 403, jsonBody: { error: "Sin permiso para administrar usuarios" } };
     }
 
-    const storage = process.env.AzureWebJobsStorage;
+    const storage = getStorageConnectionString();
     if (!storage) {
-      return { status: 503, jsonBody: { error: "Storage no configurado" } };
+      return storageMissingResponse();
     }
 
     await bootstrapAdminIfEmpty(storage, (m) => context.log(m));

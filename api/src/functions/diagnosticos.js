@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readDiagnosticos, writeDiagnosticos } from "../lib/blobDiagnosticos.js";
 import { getAuthFromRequest } from "../lib/jwt.js";
 import { canReadDiagnosticos, canWriteDiagnostico } from "../lib/roles.js";
+import { getStorageConnectionString, storageMissingResponse } from "../lib/storageConnection.js";
 
 app.http("diagnosticos", {
   methods: ["GET", "POST"],
@@ -14,12 +15,9 @@ app.http("diagnosticos", {
       return { status: 401, jsonBody: { error: "Se requiere autenticación" } };
     }
 
-    const storage = process.env.AzureWebJobsStorage;
+    const storage = getStorageConnectionString();
     if (!storage) {
-      return {
-        status: 503,
-        jsonBody: { error: "AzureWebJobsStorage no configurado (requerido para diagnosticos en la nube)" },
-      };
+      return storageMissingResponse();
     }
 
     if (request.method === "GET") {

@@ -3,6 +3,9 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "node",
-    "OPENAI_API_KEY": ""
+    "OPENAI_API_KEY": "",
+    "JWT_SECRET": "solo-para-probar-local",
+    "INITIAL_ADMIN_EMAIL": "admin@local.test",
+    "INITIAL_ADMIN_PASSWORD": "cambiar"
   }
 }
