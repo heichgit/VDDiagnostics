@@ -13,8 +13,16 @@ export function clearToken(): void {
 }
 
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const t = getToken();
-  const headers = new Headers(init?.headers);
-  if (t) headers.set("Authorization", `Bearer ${t}`);
+  const t = getToken()?.trim();
+  const headers = new Headers();
+  if (init?.headers) {
+    new Headers(init.headers).forEach((value, key) => {
+      headers.set(key, value);
+    });
+  }
+  if (t) {
+    headers.set("Authorization", `Bearer ${t}`);
+    headers.set("X-VDD-Token", t);
+  }
   return fetch(path, { ...init, headers });
 }

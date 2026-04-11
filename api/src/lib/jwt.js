@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 const DEFAULT_EXPIRES = "12h";
 
 function secret() {
-  const s = process.env.JWT_SECRET;
+  const s = process.env.JWT_SECRET?.trim();
   if (!s) throw new Error("JWT_SECRET no configurado");
   return s;
 }
@@ -37,9 +37,14 @@ export function verifyToken(token) {
  * @returns {{ sub: string, email: string, roles: string[] } | null}
  */
 export function getAuthFromRequest(request) {
-  const h = request.headers.get("authorization") || "";
-  if (!h.toLowerCase().startsWith("bearer ")) return null;
-  const token = h.slice(7).trim();
+  const auth = request.headers.get("authorization") || "";
+  let token = "";
+  if (auth.toLowerCase().startsWith("bearer ")) {
+    token = auth.slice(7).trim();
+  }
+  if (!token) {
+    token = (request.headers.get("x-vdd-token") || "").trim();
+  }
   if (!token) return null;
   try {
     return verifyToken(token);

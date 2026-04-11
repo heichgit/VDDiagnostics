@@ -59,7 +59,11 @@ app.http("authMe", {
       return { status: 401, jsonBody: { error: "Se requiere autenticación" } };
     }
     return {
+      status: 200,
       jsonBody: { id: auth.sub, email: auth.email, roles: auth.roles },
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
     };
   },
 });

@@ -32,13 +32,23 @@ const upload = multer({
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
+function extractAccessToken(req) {
+  const auth = req.headers.authorization;
+  if (auth && auth.toLowerCase().startsWith("bearer ")) {
+    return auth.slice(7).trim();
+  }
+  const x = req.headers["x-vdd-token"];
+  if (typeof x === "string" && x.trim()) return x.trim();
+  return null;
+}
+
 function requireAuth(req, res, next) {
-  const h = req.headers.authorization;
-  if (!h?.startsWith("Bearer ")) {
+  const raw = extractAccessToken(req);
+  if (!raw) {
     return res.status(401).json({ error: "Se requiere autenticación" });
   }
   try {
-    req.auth = verifyToken(h.slice(7));
+    req.auth = verifyToken(raw);
     next();
   } catch {
     return res.status(401).json({ error: "Sesión inválida o expirada" });

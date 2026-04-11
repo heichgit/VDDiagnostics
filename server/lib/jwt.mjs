@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 const DEFAULT_EXPIRES = "12h";
 
 function secret() {
-  const s = process.env.JWT_SECRET;
+  const s = process.env.JWT_SECRET?.trim();
   if (!s) throw new Error("JWT_SECRET no configurado");
   return s;
 }

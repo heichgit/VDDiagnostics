@@ -38,26 +38,56 @@ function fmtDate(iso: string) {
   }
 }
 
-async function loginRequest(email: string, password: string): Promise<{ ok: boolean; error?: string }> {
+async function loginRequest(
+  email: string,
+  password: string,
+): Promise<{ ok: boolean; token?: string; error?: string }> {
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; detalle?: string };
+  const data = (await res.json().catch(() => ({}))) as { token?: string; error?: string; detalle?: string };
   if (!res.ok) {
     const msg = [data.error, data.detalle].filter(Boolean).join(" — ");
     return { ok: false, error: msg || "Error de inicio de sesión" };
   }
-  if (typeof data.token === "string") setToken(data.token);
-  else return { ok: false, error: "Respuesta inválida" };
-  return { ok: true };
+  if (typeof data.token !== "string" || !data.token.trim()) {
+    return { ok: false, error: "Respuesta inválida (sin token)" };
+  }
+  const token = data.token.trim();
+  setToken(token);
+  return { ok: true, token };
 }
 
-async function fetchMe(): Promise<User | null> {
-  const res = await apiFetch("/api/auth/me");
-  if (!res.ok) return null;
-  return res.json();
+/**
+ * Valida el JWT contra /api/auth/me. Usa token explícito tras login para evitar condiciones de carrera.
+ */
+async function fetchMe(sessionToken?: string | null): Promise<{ user: User | null; hint?: string }> {
+  const t = (sessionToken ?? getToken())?.trim();
+  if (!t) return { user: null, hint: "Sin token de sesión" };
+
+  const headers = new Headers();
+  headers.set("Authorization", `Bearer ${t}`);
+  headers.set("X-VDD-Token", t);
+
+  const res = await fetch("/api/auth/me", { headers, cache: "no-store" });
+  const text = await res.text();
+  if (!res.ok) {
+    let hint = `HTTP ${res.status}`;
+    try {
+      const j = JSON.parse(text) as { error?: string };
+      if (j?.error) hint += `: ${j.error}`;
+    } catch {
+      if (text) hint += ` (${text.slice(0, 120).replace(/\s+/g, " ")})`;
+    }
+    return { user: null, hint };
+  }
+  try {
+    return { user: JSON.parse(text) as User };
+  } catch {
+    return { user: null, hint: "Respuesta inválida del servidor" };
+  }
 }
 
 function renderLogin(msg = "") {
@@ -89,10 +119,12 @@ function renderLogin(msg = "") {
       err.classList.add("error");
       return;
     }
-    const me = await fetchMe();
+    const { user: me, hint } = await fetchMe(r.token);
     if (!me) {
       clearToken();
-      err.textContent = "No se pudo validar la sesión";
+      err.textContent = hint
+        ? `No se pudo validar la sesión (${hint}). Revisá JWT_SECRET en Azure (sin espacios ni saltos de línea al pegar).`
+        : "No se pudo validar la sesión";
       err.classList.add("error");
       return;
     }
@@ -457,7 +489,7 @@ async function boot() {
     renderLogin();
     return;
   }
-  const me = await fetchMe();
+  const { user: me } = await fetchMe(t);
   if (!me) {
     clearToken();
     renderLogin();
