@@ -1,0 +1,136 @@
+import path from "node:path";
+import fs from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import express from "express";
+import cors from "cors";
+import multer from "multer";
+import dotenv from "dotenv";
+import OpenAI, { toFile } from "openai";
+
+dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env") });
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(__dirname, "..");
+const DATA_DIR = path.join(ROOT, "data");
+const DATA_FILE = path.join(DATA_DIR, "diagnosticos.json");
+const DIST = path.join(ROOT, "dist");
+
+const app = express();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
+
+app.use(cors());
+app.use(express.json({ limit: "2mb" }));
+
+async function ensureDataFile() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  try {
+    await fs.access(DATA_FILE);
+  } catch {
+    await fs.writeFile(DATA_FILE, "[]", "utf8");
+  }
+}
+
+async function readDiagnoses() {
+  await ensureDataFile();
+  const raw = await fs.readFile(DATA_FILE, "utf8");
+  try {
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeDiagnoses(list) {
+  await ensureDataFile();
+  await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
+}
+
+app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    return res.status(500).json({ error: "Falta OPENAI_API_KEY en .env" });
+  }
+  if (!req.file?.buffer?.length) {
+    return res.status(400).json({ error: "Archivo de audio requerido (campo: audio)" });
+  }
+
+  try {
+    const client = new OpenAI({ apiKey: key });
+    const mime = req.file.mimetype || "audio/webm";
+    const ext = mime.includes("webm") ? "webm" : mime.includes("wav") ? "wav" : "webm";
+    const file = await toFile(req.file.buffer, `dictado.${ext}`, { type: mime });
+
+    const result = await client.audio.transcriptions.create({
+      file,
+      model: "whisper-1",
+      language: "es",
+    });
+
+    return res.json({ text: result.text ?? "" });
+  } catch (e) {
+    const msg = e?.message || String(e);
+    console.error("[transcribe]", msg);
+    return res.status(502).json({ error: "Whisper no disponible", detail: msg });
+  }
+});
+
+app.get("/api/diagnosticos", async (_req, res) => {
+  try {
+    const list = await readDiagnoses();
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.post("/api/diagnosticos", async (req, res) => {
+  const {
+    pacienteRef = "",
+    estudioTipo = "",
+    imagenRef = "",
+    transcripcion = "",
+    notas = "",
+  } = req.body ?? {};
+
+  if (!String(transcripcion).trim() && !String(notas).trim()) {
+    return res.status(400).json({ error: "Indica transcripción o notas" });
+  }
+
+  try {
+    const list = await readDiagnoses();
+    const entry = {
+      id: crypto.randomUUID(),
+      pacienteRef: String(pacienteRef).trim(),
+      estudioTipo: String(estudioTipo).trim(),
+      imagenRef: String(imagenRef).trim(),
+      transcripcion: String(transcripcion).trim(),
+      notas: String(notas).trim(),
+      creadoEn: new Date().toISOString(),
+    };
+    list.unshift(entry);
+    await writeDiagnoses(list);
+    res.status(201).json(entry);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+const PORT = Number(process.env.PORT) || 8787;
+const isProd = process.env.NODE_ENV === "production";
+
+if (isProd) {
+  app.use(express.static(DIST));
+  app.get("*", (_req, res, next) => {
+    res.sendFile(path.join(DIST, "index.html"), (err) => (err ? next(err) : undefined));
+  });
+}
+
+await ensureDataFile();
+app.listen(PORT, () => {
+  console.log(`API en http://127.0.0.1:${PORT}`);
+  if (isProd) console.log(`Sirviendo estáticos desde ${DIST}`);
+});

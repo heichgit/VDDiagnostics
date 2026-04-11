@@ -1,0 +1,24 @@
+{
+  "name": "diagnostico-imagen",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"node server/index.mjs\" \"vite\"",
+    "build": "vite build",
+    "start": "node server/index.mjs",
+    "preview": "vite build && node server/index.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.6"
+  }
+}
