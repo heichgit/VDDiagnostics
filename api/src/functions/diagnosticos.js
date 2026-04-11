@@ -10,14 +10,26 @@ app.http("diagnosticos", {
   authLevel: "anonymous",
   route: "diagnosticos",
   handler: async (request, context) => {
-    const auth = getAuthFromRequest(request);
-    if (!auth) {
-      return { status: 401, jsonBody: { error: "Se requiere autenticación" } };
-    }
-
     const storage = getStorageConnectionString();
     if (!storage) {
       return storageMissingResponse();
+    }
+
+    /** @type {Record<string, unknown> | null} */
+    let postBody = null;
+    if (request.method === "POST") {
+      try {
+        postBody = await request.json();
+      } catch {
+        return { status: 400, jsonBody: { error: "JSON inválido" } };
+      }
+    }
+
+    const bodyJwt =
+      postBody && typeof postBody._vdd_jwt === "string" ? postBody._vdd_jwt : undefined;
+    const auth = getAuthFromRequest(request, bodyJwt);
+    if (!auth) {
+      return { status: 401, jsonBody: { error: "Se requiere autenticación" } };
     }
 
     if (request.method === "GET") {
@@ -37,19 +49,15 @@ app.http("diagnosticos", {
       return { status: 403, jsonBody: { error: "Sin permiso para crear diagnósticos" } };
     }
 
-    /** @type {Record<string, unknown>} */
-    let body;
-    try {
-      body = await request.json();
-    } catch {
+    if (!postBody) {
       return { status: 400, jsonBody: { error: "JSON inválido" } };
     }
 
-    const pacienteRef = String(body.pacienteRef ?? "").trim();
-    const estudioTipo = String(body.estudioTipo ?? "").trim();
-    const imagenRef = String(body.imagenRef ?? "").trim();
-    const transcripcion = String(body.transcripcion ?? "").trim();
-    const notas = String(body.notas ?? "").trim();
+    const pacienteRef = String(postBody.pacienteRef ?? "").trim();
+    const estudioTipo = String(postBody.estudioTipo ?? "").trim();
+    const imagenRef = String(postBody.imagenRef ?? "").trim();
+    const transcripcion = String(postBody.transcripcion ?? "").trim();
+    const notas = String(postBody.notas ?? "").trim();
 
     if (!transcripcion && !notas) {
       return { status: 400, jsonBody: { error: "Indica transcripción o notas" } };

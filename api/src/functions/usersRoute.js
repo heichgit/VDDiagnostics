@@ -9,20 +9,31 @@ app.http("usersMgmt", {
   authLevel: "anonymous",
   route: "users",
   handler: async (request, context) => {
-    const auth = getAuthFromRequest(request);
+    const storage = getStorageConnectionString();
+    if (!storage) {
+      return storageMissingResponse();
+    }
+    await bootstrapAdminIfEmpty(storage, (m) => context.log(m));
+
+    /** @type {Record<string, unknown> | null} */
+    let postBody = null;
+    if (request.method === "POST") {
+      try {
+        postBody = await request.json();
+      } catch {
+        return { status: 400, jsonBody: { error: "JSON inválido" } };
+      }
+    }
+
+    const bodyJwt =
+      postBody && typeof postBody._vdd_jwt === "string" ? postBody._vdd_jwt : undefined;
+    const auth = getAuthFromRequest(request, bodyJwt);
     if (!auth) {
       return { status: 401, jsonBody: { error: "Se requiere autenticación" } };
     }
     if (!canManageUsers(auth.roles)) {
       return { status: 403, jsonBody: { error: "Sin permiso para administrar usuarios" } };
     }
-
-    const storage = getStorageConnectionString();
-    if (!storage) {
-      return storageMissingResponse();
-    }
-
-    await bootstrapAdminIfEmpty(storage, (m) => context.log(m));
 
     if (request.method === "GET") {
       try {
@@ -34,18 +45,15 @@ app.http("usersMgmt", {
       }
     }
 
-    let body;
-    try {
-      body = await request.json();
-    } catch {
+    if (!postBody) {
       return { status: 400, jsonBody: { error: "JSON inválido" } };
     }
 
     try {
       const created = await createUser(storage, {
-        email: body?.email,
-        password: body?.password,
-        roles: body?.roles,
+        email: postBody.email,
+        password: postBody.password,
+        roles: postBody.roles,
       });
       return { status: 201, jsonBody: created };
     } catch (e) {

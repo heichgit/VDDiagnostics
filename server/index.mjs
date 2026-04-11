@@ -33,6 +33,10 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 function extractAccessToken(req) {
+  const b = req.body;
+  if (b && typeof b === "object" && typeof b._vdd_jwt === "string" && b._vdd_jwt.trim()) {
+    return b._vdd_jwt.trim();
+  }
   const auth = req.headers.authorization;
   if (auth && auth.toLowerCase().startsWith("bearer ")) {
     return auth.slice(7).trim();
@@ -156,12 +160,19 @@ app.post("/api/users", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/transcribe", requireAuth, (req, res, next) => {
-  if (!canTranscribe(req.auth.roles)) {
-    return res.status(403).json({ error: "Sin permiso para transcripción por voz (se requieren roles usuario y transcripcion)" });
-  }
-  next();
-}, upload.single("audio"), async (req, res) => {
+app.post(
+  "/api/transcribe",
+  upload.single("audio"),
+  requireAuth,
+  (req, res, next) => {
+    if (!canTranscribe(req.auth.roles)) {
+      return res.status(403).json({
+        error: "Sin permiso para transcripción por voz (se requieren roles usuario y transcripcion)",
+      });
+    }
+    next();
+  },
+  async (req, res) => {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
     return res.status(500).json({ error: "Falta OPENAI_API_KEY en .env" });
@@ -188,7 +199,8 @@ app.post("/api/transcribe", requireAuth, (req, res, next) => {
     console.error("[transcribe]", msg);
     return res.status(502).json({ error: "Whisper no disponible", detail: msg });
   }
-});
+},
+);
 
 app.get("/api/diagnosticos", requireAuth, async (req, res) => {
   if (!canReadDiagnosticos(req.auth.roles)) {

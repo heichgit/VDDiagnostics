@@ -34,13 +34,16 @@ export function verifyToken(token) {
 
 /**
  * @param {import("@azure/functions").HttpRequest} request
+ * @param {string | null | undefined} bodyJwt JWT enviado en JSON como `_vdd_jwt` (p. ej. Static Web Apps sin cabecera Authorization).
  * @returns {{ sub: string, email: string, roles: string[] } | null}
  */
-export function getAuthFromRequest(request) {
-  const auth = request.headers.get("authorization") || "";
-  let token = "";
-  if (auth.toLowerCase().startsWith("bearer ")) {
-    token = auth.slice(7).trim();
+export function getAuthFromRequest(request, bodyJwt = null) {
+  let token = typeof bodyJwt === "string" ? bodyJwt.trim() : "";
+  if (!token) {
+    const auth = request.headers.get("authorization") || "";
+    if (auth.toLowerCase().startsWith("bearer ")) {
+      token = auth.slice(7).trim();
+    }
   }
   if (!token) {
     token = (request.headers.get("x-vdd-token") || "").trim();

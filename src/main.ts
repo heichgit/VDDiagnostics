@@ -356,6 +356,8 @@ function wireEditor(voice: boolean, write: boolean) {
     el.micStatus.classList.remove("error", "ok");
     const fd = new FormData();
     fd.append("audio", blob, "dictado.webm");
+    const tok = getToken()?.trim();
+    if (tok) fd.append("_vdd_jwt", tok);
     const res = await apiFetch("/api/transcribe", { method: "POST", body: fd });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {

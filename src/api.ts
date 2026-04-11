@@ -24,5 +24,29 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
     headers.set("Authorization", `Bearer ${t}`);
     headers.set("X-VDD-Token", t);
   }
+
+  const method = (init?.method || "GET").toUpperCase();
+  const ct = headers.get("content-type") || "";
+  if (
+    t &&
+    method !== "GET" &&
+    method !== "HEAD" &&
+    typeof init?.body === "string" &&
+    ct.includes("application/json")
+  ) {
+    try {
+      const parsed = JSON.parse(init.body) as Record<string, unknown>;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return fetch(path, {
+          ...init,
+          headers,
+          body: JSON.stringify({ ...parsed, _vdd_jwt: t }),
+        });
+      }
+    } catch {
+      /* cuerpo no JSON */
+    }
+  }
+
   return fetch(path, { ...init, headers });
 }
