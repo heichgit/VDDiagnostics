@@ -1,13 +1,17 @@
 /**
- * Cadena de conexión al Storage usada por Blob (usuarios y diagnósticos).
- * En Azure Static Web Apps suele existir como AzureWebJobsStorage; si falta,
- * podés definir AZURE_STORAGE_CONNECTION_STRING con la misma cadena.
+ * Cadena de conexión al Storage (Blob: usuarios y diagnósticos).
+ *
+ * En Azure Static Web Apps no podés crear manualmente la variable
+ * AzureWebJobsStorage (está reservada / no permitida en App settings).
+ * Usá AZURE_STORAGE_CONNECTION_STRING con la connection string de tu Storage Account.
+ *
+ * En Functions locales sigue siendo válido AzureWebJobsStorage en local.settings.json.
  */
 export function getStorageConnectionString() {
   const v =
-    process.env.AzureWebJobsStorage ||
     process.env.AZURE_STORAGE_CONNECTION_STRING ||
     process.env.STORAGE_CONNECTION_STRING ||
+    process.env.AzureWebJobsStorage ||
     "";
   return typeof v === "string" ? v.trim() : "";
 }
@@ -18,7 +22,7 @@ export function storageMissingResponse() {
     jsonBody: {
       error: "Storage no configurado",
       detalle:
-        "Falta la cadena de conexión a Azure Storage. En Azure Portal: tu recurso Static Web App → Environment variables (o Configuration) → Application settings. Agregá AzureWebJobsStorage con la connection string de una cuenta Storage (Claves de acceso), o bien AZURE_STORAGE_CONNECTION_STRING con el mismo valor.",
+        "Agregá la variable AZURE_STORAGE_CONNECTION_STRING en tu Static Web App (Environment variables / Application settings) con el valor de Connection string de una cuenta Azure Storage (Access keys). En Static Web Apps no se permite definir AzureWebJobsStorage a mano.",
     },
   };
 }
