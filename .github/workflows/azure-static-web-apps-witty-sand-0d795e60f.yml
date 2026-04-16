@@ -38,9 +38,6 @@ jobs:
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
-        env:
-          # Opcional: repo → Settings → Variables → VITE_MAX_RECORDING_MINUTES (si no, el front usa 5 min por defecto)
-          VITE_MAX_RECORDING_MINUTES: ${{ vars.VITE_MAX_RECORDING_MINUTES }}
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_WITTY_SAND_0D795E60F }}
           action: upload

@@ -32,6 +32,19 @@ const upload = multer({
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
+function maxRecordingMinutesFromEnv() {
+  const raw = process.env.MAX_RECORDING_MINUTES;
+  const parsed =
+    raw != null && String(raw).trim() !== "" ? Number.parseFloat(String(raw).trim()) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return 5;
+  return Math.min(Math.max(parsed, 0.5), 120);
+}
+
+app.get("/api/config", (_req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.json({ maxRecordingMinutes: maxRecordingMinutesFromEnv() });
+});
+
 function extractAccessToken(req) {
   const b = req.body;
   if (b && typeof b === "object" && typeof b._vdd_jwt === "string" && b._vdd_jwt.trim()) {

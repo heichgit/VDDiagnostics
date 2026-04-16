@@ -1,3 +1,4 @@
+import "./functions/config.js";
 import "./functions/auth.js";
 import "./functions/usersRoute.js";
 import "./functions/transcribe.js";

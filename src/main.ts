@@ -7,7 +7,7 @@ import {
   rolesLabel,
 } from "./roles";
 import { apiFetch, clearToken, getToken, setToken } from "./api";
-import { formatMaxRecordingLabel, getMaxRecordingMinutes } from "./recordingConfig";
+import { formatMaxRecordingLabel, getMaxRecordingMinutes, loadRecordingConfig } from "./recordingConfig";
 
 type Diagnostico = {
   id: string;
@@ -239,7 +239,7 @@ function fichaYDictadoHtml(voice: boolean, maxRecordingMin: number) {
       <h2>Dictado por voz</h2>
       ${
         voice
-          ? `<p class="recording-limit-hint muted">Duración máxima por grabación: <strong>${escapeHtml(maxLabel)}</strong> (configurable con <code>VITE_MAX_RECORDING_MINUTES</code> al compilar).</p>
+          ? `<p class="recording-limit-hint muted">Duración máxima por grabación: <strong>${escapeHtml(maxLabel)}</strong> (Azure: variable <code>MAX_RECORDING_MINUTES</code>; local/build: <code>VITE_MAX_RECORDING_MINUTES</code>).</p>
         <p class="status" id="micStatus"></p>
         <div class="actions">
           <button type="button" class="btn-record" id="btnRecord">Grabar</button>
@@ -515,6 +515,7 @@ function renderList(lista: HTMLUListElement, listaEmpty: HTMLParagraphElement, i
 }
 
 async function boot() {
+  await loadRecordingConfig();
   const t = getToken();
   if (!t) {
     renderLogin();
