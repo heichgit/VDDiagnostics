@@ -5,6 +5,7 @@
  * 3) Por defecto: 5
  */
 
+/** Solo se guarda si la API devolvió un valor válido (nunca el fallback de Vite). */
 let cachedMinutes: number | null = null;
 
 function clampMinutes(n: number): number {
@@ -21,24 +22,64 @@ function fallbackFromVite(): number {
   return clampMinutes(parsed);
 }
 
-/** Carga el valor desde el servidor (Azure/Express) y lo cachea. Llamar al iniciar la app. */
-export async function loadRecordingConfig(): Promise<number> {
+function parseMaxFromJson(data: unknown): number | null {
+  if (data == null || typeof data !== "object") return null;
+  const n = Number((data as { maxRecordingMinutes?: unknown }).maxRecordingMinutes);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return clampMinutes(n);
+}
+
+function configUrl(): string {
+  if (typeof globalThis.location === "undefined" || !globalThis.location.origin) {
+    return "/api/config";
+  }
+  return `${globalThis.location.origin}/api/config`;
+}
+
+/**
+ * Carga el valor desde el servidor (Azure/Express) y lo cachea si la respuesta es válida.
+ * Reintenta antes de usar VITE_MAX_RECORDING_MINUTES: el fallback no se cachea para no quedar
+ * “pegado” en 5 si el primer intento falló (HTML, cold start, etc.).
+ */
+export async function loadRecordingConfig(options?: { force?: boolean }): Promise<number> {
+  if (options?.force) cachedMinutes = null;
   if (cachedMinutes != null) return cachedMinutes;
-  try {
-    const res = await fetch("/api/config", { cache: "no-store" });
-    if (res.ok) {
-      const data = (await res.json()) as { maxRecordingMinutes?: unknown };
-      const n = Number(data?.maxRecordingMinutes);
-      if (Number.isFinite(n) && n > 0) {
-        cachedMinutes = clampMinutes(n);
+
+  const maxAttempts = 3;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetch(configUrl(), {
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) continue;
+
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
+      let data: unknown;
+      if (ct.includes("application/json") || ct.includes("text/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        const trimmed = text.trim();
+        if (!trimmed.startsWith("{")) continue;
+        data = JSON.parse(trimmed) as unknown;
+      }
+
+      const parsed = parseMaxFromJson(data);
+      if (parsed != null) {
+        cachedMinutes = parsed;
         return cachedMinutes;
       }
+    } catch {
+      /* red, HTML, JSON inválido */
     }
-  } catch {
-    /* sin red o API antigua */
+    if (attempt < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
+    }
   }
-  cachedMinutes = fallbackFromVite();
-  return cachedMinutes;
+
+  return fallbackFromVite();
 }
 
 /** Usar después de `await loadRecordingConfig()` (o si ya hubo carga). */

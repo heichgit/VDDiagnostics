@@ -131,11 +131,12 @@ function renderLogin(msg = "") {
       err.classList.add("error");
       return;
     }
-    mountApp(me);
+    await mountApp(me);
   });
 }
 
-function mountApp(user: User) {
+async function mountApp(user: User) {
+  await loadRecordingConfig();
   const read = canReadDiagnosticos(user.roles);
   const write = canWriteDiagnostico(user.roles);
   const voice = canTranscribe(user.roles);
@@ -515,7 +516,6 @@ function renderList(lista: HTMLUListElement, listaEmpty: HTMLParagraphElement, i
 }
 
 async function boot() {
-  await loadRecordingConfig();
   const t = getToken();
   if (!t) {
     renderLogin();
@@ -527,7 +527,7 @@ async function boot() {
     renderLogin();
     return;
   }
-  mountApp(me);
+  await mountApp(me);
 }
 
 void boot();
