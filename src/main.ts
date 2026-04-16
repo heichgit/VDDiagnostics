@@ -7,6 +7,7 @@ import {
   rolesLabel,
 } from "./roles";
 import { apiFetch, clearToken, getToken, setToken } from "./api";
+import { formatMaxRecordingLabel, getMaxRecordingMinutes } from "./recordingConfig";
 
 type Diagnostico = {
   id: string;
@@ -140,6 +141,7 @@ function mountApp(user: User) {
   const voice = canTranscribe(user.roles);
   const admin = canManageUsers(user.roles);
   const operadorSolo = !write && !voice && read;
+  const maxRecordingMin = getMaxRecordingMinutes();
 
   root.innerHTML = `
     <header class="app-header">
@@ -152,7 +154,7 @@ function mountApp(user: User) {
 
     ${admin ? adminPanelHtml() : ""}
 
-    ${operadorSolo ? "" : fichaYDictadoHtml(voice)}
+    ${operadorSolo ? "" : fichaYDictadoHtml(voice, maxRecordingMin)}
 
     ${read ? listadoHtml() : `<p class="status error">Tu usuario no tiene permiso para ver el listado de diagnósticos.</p>`}
   `;
@@ -164,7 +166,7 @@ function mountApp(user: User) {
 
   if (admin) wireAdminPanel();
 
-  if (!operadorSolo && read) wireEditor(voice, write);
+  if (!operadorSolo && read) wireEditor(voice, write, maxRecordingMin);
   else if (read) void loadListOnly();
 }
 
@@ -205,7 +207,8 @@ function adminPanelHtml() {
   `;
 }
 
-function fichaYDictadoHtml(voice: boolean) {
+function fichaYDictadoHtml(voice: boolean, maxRecordingMin: number) {
+  const maxLabel = formatMaxRecordingLabel(maxRecordingMin);
   return `
     <div class="card" id="cardFicha">
       <h2>Ficha del estudio</h2>
@@ -236,7 +239,8 @@ function fichaYDictadoHtml(voice: boolean) {
       <h2>Dictado por voz</h2>
       ${
         voice
-          ? `<p class="status" id="micStatus"></p>
+          ? `<p class="recording-limit-hint muted">Duración máxima por grabación: <strong>${escapeHtml(maxLabel)}</strong> (configurable con <code>VITE_MAX_RECORDING_MINUTES</code> al compilar).</p>
+        <p class="status" id="micStatus"></p>
         <div class="actions">
           <button type="button" class="btn-record" id="btnRecord">Grabar</button>
           <button type="button" class="btn-ghost" id="btnStop" disabled>Detener y transcribir</button>
@@ -311,7 +315,7 @@ function wireAdminPanel() {
   });
 }
 
-function wireEditor(voice: boolean, write: boolean) {
+function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
   const el = {
     pacienteRef: root.querySelector<HTMLInputElement>("#pacienteRef")!,
     estudioTipo: root.querySelector<HTMLSelectElement>("#estudioTipo")!,
@@ -340,6 +344,15 @@ function wireEditor(voice: boolean, write: boolean) {
 
   let mediaRecorder: MediaRecorder | null = null;
   let chunks: BlobPart[] = [];
+  let recordingLimitTimer: ReturnType<typeof setTimeout> | null = null;
+  const maxRecordingMs = maxRecordingMin * 60 * 1000;
+
+  function clearRecordingLimitTimer() {
+    if (recordingLimitTimer != null) {
+      clearTimeout(recordingLimitTimer);
+      recordingLimitTimer = null;
+    }
+  }
 
   function setRecordingUi(active: boolean) {
     if (!el.btnRecord || !el.btnStop || !el.micStatus) return;
@@ -387,6 +400,7 @@ function wireEditor(voice: boolean, write: boolean) {
           if (e.data.size) chunks.push(e.data);
         };
         mediaRecorder.onstop = async () => {
+          clearRecordingLimitTimer();
           stream.getTracks().forEach((t) => t.stop());
           const blob = new Blob(chunks, { type: mediaRecorder?.mimeType || "audio/webm" });
           mediaRecorder = null;
@@ -398,6 +412,18 @@ function wireEditor(voice: boolean, write: boolean) {
           }
         };
         mediaRecorder.start();
+        clearRecordingLimitTimer();
+        recordingLimitTimer = setTimeout(() => {
+          recordingLimitTimer = null;
+          if (mediaRecorder && mediaRecorder.state === "recording") {
+            if (el.micStatus) {
+              el.micStatus.textContent = `Límite de ${formatMaxRecordingLabel(maxRecordingMin)} alcanzado; deteniendo…`;
+              el.micStatus.classList.remove("error", "ok");
+            }
+            mediaRecorder.stop();
+            setRecordingUi(false);
+          }
+        }, maxRecordingMs);
         setRecordingUi(true);
       } catch (e) {
         if (el.micStatus) {
@@ -409,6 +435,7 @@ function wireEditor(voice: boolean, write: boolean) {
     });
 
     el.btnStop.addEventListener("click", () => {
+      clearRecordingLimitTimer();
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
         setRecordingUi(false);

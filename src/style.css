@@ -291,6 +291,17 @@ button {
   font-size: 0.8rem;
 }
 
+.recording-limit-hint {
+  font-size: 0.8rem;
+  margin: 0 0 0.65rem;
+  line-height: 1.35;
+}
+
+.recording-limit-hint code {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .chk {
   display: inline-flex;
   align-items: center;
