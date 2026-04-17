@@ -3,16 +3,29 @@ import { randomUUID } from "node:crypto";
 import { readDiagnosticos, writeDiagnosticos } from "../lib/blobDiagnosticos.js";
 import { getAuthFromRequest } from "../lib/jwt.js";
 import { canReadDiagnosticos, canWriteDiagnostico } from "../lib/roles.js";
-import { getStorageConnectionString, storageMissingResponse } from "../lib/storageConnection.js";
+import { getStorageConnectionString } from "../lib/storageConnection.js";
+import {
+  insertDiagnosticoSql,
+  isSqlConfigured,
+  listDiagnosticosSql,
+} from "../lib/sqlDiagnosticos.js";
 
 app.http("diagnosticos", {
   methods: ["GET", "POST"],
   authLevel: "anonymous",
   route: "diagnosticos",
   handler: async (request, context) => {
+    const useSql = isSqlConfigured();
     const storage = getStorageConnectionString();
-    if (!storage) {
-      return storageMissingResponse();
+    if (!useSql && !storage) {
+      return {
+        status: 503,
+        jsonBody: {
+          error: "Sin almacenamiento para diagnósticos",
+          detalle:
+            "Definí SQL_CONNECTION_STRING o AZURE_SQL_CONNECTION_STRING (Azure SQL / SQL Server) o AZURE_STORAGE_CONNECTION_STRING (blob JSON).",
+        },
+      };
     }
 
     /** @type {Record<string, unknown> | null} */
@@ -37,7 +50,7 @@ app.http("diagnosticos", {
         return { status: 403, jsonBody: { error: "Sin permiso para ver diagnósticos" } };
       }
       try {
-        const list = await readDiagnosticos(storage);
+        const list = useSql ? await listDiagnosticosSql() : await readDiagnosticos(storage);
         return { jsonBody: list };
       } catch (e) {
         context.error("[diagnosticos GET]", e);
@@ -72,6 +85,16 @@ app.http("diagnosticos", {
       notas,
       creadoEn: new Date().toISOString(),
     };
+
+    if (useSql) {
+      try {
+        await insertDiagnosticoSql(entry);
+        return { status: 201, jsonBody: entry };
+      } catch (e) {
+        context.error("[diagnosticos POST SQL]", e);
+        return { status: 500, jsonBody: { error: String(e?.message || e) } };
+      }
+    }
 
     const maxAttempts = 4;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {

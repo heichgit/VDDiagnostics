@@ -14,6 +14,11 @@ import {
 } from "./lib/roles.mjs";
 import { signToken, verifyToken } from "./lib/jwt.mjs";
 import * as users from "./lib/usersStore.mjs";
+import {
+  insertDiagnosticoSql,
+  isSqlConfigured,
+  listDiagnosticosSql,
+} from "../api/src/lib/sqlDiagnosticos.js";
 
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env") });
 
@@ -82,6 +87,9 @@ async function ensureDataFile() {
 }
 
 async function readDiagnoses() {
+  if (isSqlConfigured()) {
+    return await listDiagnosticosSql();
+  }
   await ensureDataFile();
   const raw = await fs.readFile(DATA_FILE, "utf8");
   try {
@@ -244,7 +252,6 @@ app.post("/api/diagnosticos", requireAuth, async (req, res) => {
   }
 
   try {
-    const list = await readDiagnoses();
     const entry = {
       id: crypto.randomUUID(),
       pacienteRef: String(pacienteRef).trim(),
@@ -254,6 +261,11 @@ app.post("/api/diagnosticos", requireAuth, async (req, res) => {
       notas: String(notas).trim(),
       creadoEn: new Date().toISOString(),
     };
+    if (isSqlConfigured()) {
+      await insertDiagnosticoSql(entry);
+      return res.status(201).json(entry);
+    }
+    const list = await readDiagnoses();
     list.unshift(entry);
     await writeDiagnoses(list);
     res.status(201).json(entry);
