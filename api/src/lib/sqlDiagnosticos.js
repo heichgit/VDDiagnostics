@@ -81,6 +81,7 @@ async function ensureSchema(p) {
         pacienteRef NVARCHAR(512) NOT NULL CONSTRAINT DF_Diagnosticos_pacienteRef DEFAULT (N''),
         estudioTipo NVARCHAR(256) NOT NULL CONSTRAINT DF_Diagnosticos_estudioTipo DEFAULT (N''),
         imagenRef NVARCHAR(512) NOT NULL CONSTRAINT DF_Diagnosticos_imagenRef DEFAULT (N''),
+        tipoDiagnostico INT NOT NULL CONSTRAINT DF_Diagnosticos_tipoDiagnostico DEFAULT (0),
         transcripcion NVARCHAR(MAX) NOT NULL CONSTRAINT DF_Diagnosticos_transcripcion DEFAULT (N''),
         notas NVARCHAR(MAX) NOT NULL CONSTRAINT DF_Diagnosticos_notas DEFAULT (N''),
         creadoEn DATETIME2(3) NOT NULL
@@ -91,6 +92,20 @@ async function ensureSchema(p) {
   schemaReady = true;
 }
 
+/** Tablas creadas antes de tipoDiagnostico. */
+async function ensureTipoDiagnosticoColumn(p) {
+  await p.request().query(`
+    IF EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'dbo.Diagnosticos'))
+    AND NOT EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'dbo.Diagnosticos') AND name = N'tipoDiagnostico'
+    )
+    BEGIN
+      ALTER TABLE dbo.Diagnosticos ADD tipoDiagnostico INT NOT NULL CONSTRAINT DF_Diagnosticos_tipoDiagMigr DEFAULT (0);
+    END
+  `);
+}
+
 function rowToEntry(r) {
   const creadoEn =
     r.creadoEn instanceof Date
@@ -98,11 +113,17 @@ function rowToEntry(r) {
       : typeof r.creadoEn === "string"
         ? r.creadoEn
         : new Date(r.creadoEn).toISOString();
+  const rawTipo = r.tipoDiagnostico;
+  const tNum = typeof rawTipo === "number" ? rawTipo : Number.parseInt(String(rawTipo ?? "0"), 10);
+  const tipoDiagnostico = Number.isFinite(tNum)
+    ? Math.min(Math.max(Math.floor(tNum), 0), 36)
+    : 0;
   return {
     id: String(r.id),
     pacienteRef: r.pacienteRef != null ? String(r.pacienteRef) : "",
     estudioTipo: r.estudioTipo != null ? String(r.estudioTipo) : "",
     imagenRef: r.imagenRef != null ? String(r.imagenRef) : "",
+    tipoDiagnostico,
     transcripcion: r.transcripcion != null ? String(r.transcripcion) : "",
     notas: r.notas != null ? String(r.notas) : "",
     creadoEn,
@@ -116,8 +137,9 @@ function rowToEntry(r) {
 export async function listDiagnosticosSql() {
   const p = await getPool();
   await ensureSchema(p);
+  await ensureTipoDiagnosticoColumn(p);
   const result = await p.request().query(`
-    SELECT id, pacienteRef, estudioTipo, imagenRef, transcripcion, notas, creadoEn
+    SELECT id, pacienteRef, estudioTipo, imagenRef, tipoDiagnostico, transcripcion, notas, creadoEn
     FROM dbo.Diagnosticos
     ORDER BY creadoEn DESC
   `);
@@ -125,24 +147,30 @@ export async function listDiagnosticosSql() {
 }
 
 /**
- * @param {{ id: string, pacienteRef: string, estudioTipo: string, imagenRef: string, transcripcion: string, notas: string, creadoEn: string }} entry
+ * @param {{ id: string, pacienteRef: string, estudioTipo: string, imagenRef: string, tipoDiagnostico?: number, transcripcion: string, notas: string, creadoEn: string }} entry
  */
 export async function insertDiagnosticoSql(entry) {
   const p = await getPool();
   await ensureSchema(p);
+  await ensureTipoDiagnosticoColumn(p);
   const creado = new Date(entry.creadoEn);
+  const tipo =
+    typeof entry.tipoDiagnostico === "number" && Number.isFinite(entry.tipoDiagnostico)
+      ? Math.min(Math.max(Math.floor(entry.tipoDiagnostico), 0), 36)
+      : 0;
   await p
     .request()
     .input("id", sql.VarChar(36), entry.id)
     .input("pacienteRef", sql.NVarChar(512), entry.pacienteRef)
     .input("estudioTipo", sql.NVarChar(256), entry.estudioTipo)
     .input("imagenRef", sql.NVarChar(512), entry.imagenRef)
+    .input("tipoDiagnostico", sql.Int, tipo)
     .input("transcripcion", sql.NVarChar(), entry.transcripcion)
     .input("notas", sql.NVarChar(), entry.notas)
     .input("creadoEn", sql.DateTime2(3), creado)
     .query(`
-      INSERT INTO dbo.Diagnosticos (id, pacienteRef, estudioTipo, imagenRef, transcripcion, notas, creadoEn)
-      VALUES (@id, @pacienteRef, @estudioTipo, @imagenRef, @transcripcion, @notas, @creadoEn)
+      INSERT INTO dbo.Diagnosticos (id, pacienteRef, estudioTipo, imagenRef, tipoDiagnostico, transcripcion, notas, creadoEn)
+      VALUES (@id, @pacienteRef, @estudioTipo, @imagenRef, @tipoDiagnostico, @transcripcion, @notas, @creadoEn)
     `);
-  return entry;
+  return { ...entry, tipoDiagnostico: tipo };
 }

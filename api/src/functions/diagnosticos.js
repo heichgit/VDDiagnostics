@@ -9,6 +9,7 @@ import {
   isSqlConfigured,
   listDiagnosticosSql,
 } from "../lib/sqlDiagnosticos.js";
+import { normalizarTipoDiagnostico } from "../lib/tipoDiagnostico.js";
 
 app.http("diagnosticos", {
   methods: ["GET", "POST"],
@@ -76,6 +77,7 @@ app.http("diagnosticos", {
     const imagenRef = String(postBody.imagenRef ?? "").trim();
     const transcripcion = String(postBody.transcripcion ?? "").trim();
     const notas = String(postBody.notas ?? "").trim();
+    const tipoDiagnostico = normalizarTipoDiagnostico(postBody.tipoDiagnostico);
 
     if (!transcripcion && !notas) {
       return { status: 400, jsonBody: { error: "Indica transcripción o notas" } };
@@ -86,6 +88,7 @@ app.http("diagnosticos", {
       pacienteRef,
       estudioTipo,
       imagenRef,
+      tipoDiagnostico,
       transcripcion,
       notas,
       creadoEn: new Date().toISOString(),
@@ -93,8 +96,8 @@ app.http("diagnosticos", {
 
     if (useSql) {
       try {
-        await insertDiagnosticoSql(entry);
-        return { status: 201, jsonBody: entry };
+        const saved = await insertDiagnosticoSql(entry);
+        return { status: 201, jsonBody: saved };
       } catch (e) {
         context.error("[diagnosticos POST SQL]", e);
         return { status: 500, jsonBody: { error: String(e?.message || e) } };

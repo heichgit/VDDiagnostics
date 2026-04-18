@@ -7,6 +7,11 @@ import {
   rolesLabel,
 } from "./roles";
 import { apiFetch, clearToken, getToken, setToken } from "./api";
+import {
+  etiquetaTipoDiagnostico,
+  htmlOpcionesTipoDiagnostico,
+  normalizarCodigoTipoDiagnostico,
+} from "./diagnosticoTipos";
 import { formatMaxRecordingLabel, getMaxRecordingMinutes, loadRecordingConfig } from "./recordingConfig";
 
 type Diagnostico = {
@@ -14,6 +19,7 @@ type Diagnostico = {
   pacienteRef: string;
   estudioTipo: string;
   imagenRef: string;
+  tipoDiagnostico?: number;
   transcripcion: string;
   notas: string;
   creadoEn: string;
@@ -247,8 +253,12 @@ function fichaYDictadoHtml(voice: boolean, maxRecordingMin: number) {
         </div>
       </div>
       <div>
-        <label for="imagenRef">Ref. / accession imagen</label>
-        <input id="imagenRef" type="text" placeholder="Ej. PACS ID o número de acceso" />
+        <label for="imagenRef">Ref. / imágen</label>
+        <input id="imagenRef" type="text" placeholder="Ej. PACS ID o número de Imágen" />
+      </div>
+      <div>
+        <label for="tipoDiagnostico">Tipo de diagnóstico</label>
+        <select id="tipoDiagnostico">${htmlOpcionesTipoDiagnostico()}</select>
       </div>
     </div>
 
@@ -256,7 +266,7 @@ function fichaYDictadoHtml(voice: boolean, maxRecordingMin: number) {
       <h2>Dictado por voz</h2>
       ${
         voice
-          ? `<p class="recording-limit-hint muted">Duración máxima por grabación: <strong>${escapeHtml(maxLabel)}</strong> (Azure: variable <code>MAX_RECORDING_MINUTES</code>; local/build: <code>VITE_MAX_RECORDING_MINUTES</code>).</p>
+          ? `<p class="recording-limit-hint muted">Duración máxima por grabación: <strong>${escapeHtml(maxLabel)}</strong> (Azure: variable <code>MAX_RECORDING_MINUTES</code>;</p>
         <p class="status" id="micStatus"></p>
         <div class="actions">
           <button type="button" class="btn-record" id="btnRecord">Grabar</button>
@@ -265,7 +275,7 @@ function fichaYDictadoHtml(voice: boolean, maxRecordingMin: number) {
           : `<p class="status muted">La transcripción por voz no está habilitada para tu usuario (se requieren los roles <strong>usuario</strong> y <strong>transcripcion</strong>, o <strong>admin</strong>).</p>`
       }
       <label for="transcripcion">Informe / transcripción</label>
-      <textarea id="transcripcion" placeholder="Texto del informe (manual o por Whisper)."></textarea>
+      <textarea id="transcripcion" placeholder="Texto del informe (manualpor o grabado por voz)."></textarea>
       <label for="notas">Notas adicionales (opcional)</label>
       <textarea id="notas" rows="3" placeholder="Complementos, aclaraciones…"></textarea>
       <div class="actions">
@@ -337,6 +347,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
     pacienteRef: root.querySelector<HTMLInputElement>("#pacienteRef")!,
     estudioTipo: root.querySelector<HTMLSelectElement>("#estudioTipo")!,
     imagenRef: root.querySelector<HTMLInputElement>("#imagenRef")!,
+    tipoDiagnostico: root.querySelector<HTMLSelectElement>("#tipoDiagnostico")!,
     transcripcion: root.querySelector<HTMLTextAreaElement>("#transcripcion")!,
     notas: root.querySelector<HTMLTextAreaElement>("#notas")!,
     btnRecord: root.querySelector<HTMLButtonElement>("#btnRecord"),
@@ -352,6 +363,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
     el.pacienteRef.disabled = true;
     el.estudioTipo.disabled = true;
     el.imagenRef.disabled = true;
+    el.tipoDiagnostico.disabled = true;
     el.transcripcion.disabled = true;
     el.notas.disabled = true;
     el.btnGuardar.disabled = true;
@@ -469,6 +481,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
           pacienteRef: el.pacienteRef.value,
           estudioTipo: el.estudioTipo.value,
           imagenRef: el.imagenRef.value,
+          tipoDiagnostico: normalizarCodigoTipoDiagnostico(Number(el.tipoDiagnostico.value)),
           transcripcion: el.transcripcion.value,
           notas: el.notas.value,
         };
@@ -543,7 +556,8 @@ function renderList(lista: HTMLUListElement, listaEmpty: HTMLParagraphElement, i
   listaEmpty.hidden = items.length > 0;
   for (const d of items.slice(0, LISTA_DIAGNOSTICOS_MAX)) {
     const li = document.createElement("li");
-    const meta = [d.pacienteRef, d.estudioTipo, d.imagenRef].filter(Boolean).join(" · ");
+    const tipoLabel = etiquetaTipoDiagnostico(d.tipoDiagnostico ?? 0);
+    const meta = [tipoLabel, d.pacienteRef, d.estudioTipo, d.imagenRef].filter(Boolean).join(" · ");
     const snippet = d.transcripcion || d.notas || "(sin texto)";
     li.innerHTML = `
       <div class="meta">${escapeHtml(meta || "Sin referencias")} · ${escapeHtml(fmtDate(d.creadoEn))}</div>

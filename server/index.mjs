@@ -20,6 +20,7 @@ import {
   listDiagnosticosSql,
 } from "../api/src/lib/sqlDiagnosticos.js";
 import { getStorageConnectionString } from "../api/src/lib/storageConnection.js";
+import { normalizarTipoDiagnostico } from "../api/src/lib/tipoDiagnostico.js";
 
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env") });
 
@@ -270,6 +271,7 @@ app.post("/api/diagnosticos", requireAuth, async (req, res) => {
     imagenRef = "",
     transcripcion = "",
     notas = "",
+    tipoDiagnostico: tipoRaw,
   } = req.body ?? {};
 
   if (!String(transcripcion).trim() && !String(notas).trim()) {
@@ -277,18 +279,20 @@ app.post("/api/diagnosticos", requireAuth, async (req, res) => {
   }
 
   try {
+    const tipoDiagnostico = normalizarTipoDiagnostico(tipoRaw);
     const entry = {
       id: crypto.randomUUID(),
       pacienteRef: String(pacienteRef).trim(),
       estudioTipo: String(estudioTipo).trim(),
       imagenRef: String(imagenRef).trim(),
+      tipoDiagnostico,
       transcripcion: String(transcripcion).trim(),
       notas: String(notas).trim(),
       creadoEn: new Date().toISOString(),
     };
     if (isSqlConfigured()) {
-      await insertDiagnosticoSql(entry);
-      return res.status(201).json(entry);
+      const saved = await insertDiagnosticoSql(entry);
+      return res.status(201).json(saved);
     }
     const list = await readDiagnoses();
     list.unshift(entry);
