@@ -19,6 +19,22 @@ type Diagnostico = {
   creadoEn: string;
 };
 
+/** Cuántos ítems mostrar en “Últimos registros” (más recientes primero). */
+const LISTA_DIAGNOSTICOS_MAX = 25;
+
+function compareDiagnosticoRecientePrimero(a: Diagnostico, b: Diagnostico): number {
+  const ta = Date.parse(a.creadoEn);
+  const tb = Date.parse(b.creadoEn);
+  if (Number.isFinite(tb) && Number.isFinite(ta)) return tb - ta;
+  if (Number.isFinite(tb)) return 1;
+  if (Number.isFinite(ta)) return -1;
+  return 0;
+}
+
+function ordenarDiagnosticosRecientesPrimero(items: Diagnostico[]): Diagnostico[] {
+  return [...items].sort(compareDiagnosticoRecientePrimero);
+}
+
 type User = { id: string; email: string; roles: string[] };
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
@@ -490,9 +506,16 @@ async function loadList(
   opts?: { preferFirst?: Diagnostico },
 ) {
   try {
-    const res = await apiFetch("/api/diagnosticos", { cache: "no-store" });
+    /** POST + JSON vacío: apiFetch inyecta _vdd_jwt (Azure SWA no reenvía Authorization en GET). */
+    const res = await apiFetch("/api/diagnosticos/list", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+      cache: "no-store",
+    });
     const data = await res.json();
     if (!res.ok) {
+      lista.innerHTML = "";
       listaEmpty.hidden = false;
       return;
     }
@@ -501,8 +524,10 @@ async function loadList(
     if (p?.id && !items.some((d) => d.id === p.id)) {
       items = [p, ...items];
     }
+    items = ordenarDiagnosticosRecientesPrimero(items);
     renderList(lista, listaEmpty, items);
   } catch {
+    lista.innerHTML = "";
     listaEmpty.hidden = false;
   }
 }
@@ -516,7 +541,7 @@ async function loadListOnly() {
 function renderList(lista: HTMLUListElement, listaEmpty: HTMLParagraphElement, items: Diagnostico[]) {
   lista.innerHTML = "";
   listaEmpty.hidden = items.length > 0;
-  for (const d of items.slice(0, 12)) {
+  for (const d of items.slice(0, LISTA_DIAGNOSTICOS_MAX)) {
     const li = document.createElement("li");
     const meta = [d.pacienteRef, d.estudioTipo, d.imagenRef].filter(Boolean).join(" · ");
     const snippet = d.transcripcion || d.notas || "(sin texto)";

@@ -120,3 +120,57 @@ app.http("diagnosticos", {
     return { status: 500, jsonBody: { error: "No se pudo guardar" } };
   },
 });
+
+/**
+ * Listado con POST + _vdd_jwt en el cuerpo: en Azure Static Web Apps el GET a /api/*
+ * a veces no reenvía Authorization; el POST sí (mismo patrón que /api/auth/me).
+ */
+app.http("diagnosticosList", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "diagnosticos/list",
+  handler: async (request, context) => {
+    const useSql = isSqlConfigured();
+    const storage = getStorageConnectionString();
+    if (!useSql && !storage) {
+      return {
+        status: 503,
+        jsonBody: {
+          error: "Sin almacenamiento para diagnósticos",
+          detalle:
+            "Definí SQL_CONNECTION_STRING o AZURE_SQL_CONNECTION_STRING (Azure SQL / SQL Server) o AZURE_STORAGE_CONNECTION_STRING (blob JSON).",
+        },
+      };
+    }
+
+    let postBody = null;
+    try {
+      postBody = await request.json();
+    } catch {
+      return { status: 400, jsonBody: { error: "JSON inválido" } };
+    }
+
+    const bodyJwt =
+      postBody && typeof postBody._vdd_jwt === "string" ? postBody._vdd_jwt : undefined;
+    const auth = getAuthFromRequest(request, bodyJwt);
+    if (!auth) {
+      return { status: 401, jsonBody: { error: "Se requiere autenticación" } };
+    }
+    if (!canReadDiagnosticos(auth.roles)) {
+      return { status: 403, jsonBody: { error: "Sin permiso para ver diagnósticos" } };
+    }
+
+    try {
+      const list = useSql ? await listDiagnosticosSql() : await readDiagnosticos(storage);
+      return {
+        jsonBody: list,
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        },
+      };
+    } catch (e) {
+      context.error("[diagnosticos POST list]", e);
+      return { status: 500, jsonBody: { error: String(e?.message || e) } };
+    }
+  },
+});

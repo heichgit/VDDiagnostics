@@ -246,6 +246,20 @@ app.get("/api/diagnosticos", requireAuth, async (req, res) => {
   }
 });
 
+/** Mismo listado con POST + JWT en cuerpo (Static Web Apps / proxy). */
+app.post("/api/diagnosticos/list", requireAuth, async (req, res) => {
+  if (!canReadDiagnosticos(req.auth.roles)) {
+    return res.status(403).json({ error: "Sin permiso para ver diagnósticos" });
+  }
+  try {
+    const list = await readDiagnoses();
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 app.post("/api/diagnosticos", requireAuth, async (req, res) => {
   if (!canWriteDiagnostico(req.auth.roles)) {
     return res.status(403).json({ error: "Sin permiso para crear diagnósticos" });
