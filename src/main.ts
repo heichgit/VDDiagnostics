@@ -279,6 +279,9 @@ function fichaYDictadoHtml(voice: boolean, maxRecordingMin: number) {
       <label for="notas">Notas adicionales (opcional)</label>
       <textarea id="notas" rows="3" placeholder="Complementos, aclaraciones…"></textarea>
       <div class="actions">
+        <button type="button" class="btn-ghost" id="btnSugerirTipo">
+          Detectar tipo de diagnóstico desde el informe (IA)
+        </button>
         <button type="button" class="btn-primary" id="btnGuardar">Guardar diagnóstico</button>
       </div>
       <p class="status" id="saveStatus"></p>
@@ -353,6 +356,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
     btnRecord: root.querySelector<HTMLButtonElement>("#btnRecord"),
     btnStop: root.querySelector<HTMLButtonElement>("#btnStop"),
     btnGuardar: root.querySelector<HTMLButtonElement>("#btnGuardar")!,
+    btnSugerirTipo: root.querySelector<HTMLButtonElement>("#btnSugerirTipo"),
     micStatus: root.querySelector<HTMLParagraphElement>("#micStatus"),
     saveStatus: root.querySelector<HTMLParagraphElement>("#saveStatus")!,
     lista: root.querySelector<HTMLUListElement>("#lista")!,
@@ -364,6 +368,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
     el.estudioTipo.disabled = true;
     el.imagenRef.disabled = true;
     el.tipoDiagnostico.disabled = true;
+    if (el.btnSugerirTipo) el.btnSugerirTipo.disabled = true;
     el.transcripcion.disabled = true;
     el.notas.disabled = true;
     el.btnGuardar.disabled = true;
@@ -468,6 +473,63 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
         setRecordingUi(false);
+      }
+    });
+  }
+
+  if (write && el.btnSugerirTipo) {
+    el.btnSugerirTipo.addEventListener("click", async () => {
+      const informe = el.transcripcion.value.trim();
+      if (!informe) {
+        el.saveStatus.textContent = "Escribí texto en el informe antes de detectar el tipo.";
+        el.saveStatus.className = "status error";
+        return;
+      }
+      el.btnSugerirTipo.disabled = true;
+      el.saveStatus.textContent = "Analizando informe…";
+      el.saveStatus.className = "status";
+      try {
+        const res = await apiFetch("/api/sugerir-tipo-diagnostico", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcripcion: informe }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          codigo?: number | null;
+          motivo?: string;
+          error?: string;
+          detalle?: string;
+        };
+        if (!res.ok) {
+          el.saveStatus.textContent =
+            data.error || data.detalle || "No se pudo analizar el informe";
+          el.saveStatus.classList.add("error");
+          return;
+        }
+        const codigo = data.codigo;
+        const motivo = typeof data.motivo === "string" ? data.motivo.trim() : "";
+        if (codigo === null || codigo === undefined) {
+          el.saveStatus.textContent =
+            motivo || "No se identificó un tipo con suficiente certeza. Podés elegirlo manualmente.";
+          el.saveStatus.className = "status";
+          return;
+        }
+        const label = etiquetaTipoDiagnostico(codigo);
+        const motivoLine = motivo ? `\n\nMotivo sugerido: ${motivo}` : "";
+        const msg = `Según el análisis del informe se sugiere el tipo:\n\n«${label}» (código ${codigo})${motivoLine}\n\n¿Desea aplicar este valor en el campo «Tipo de diagnóstico»?`;
+        if (globalThis.confirm(msg)) {
+          el.tipoDiagnostico.value = String(codigo);
+          el.saveStatus.textContent = "Tipo de diagnóstico actualizado según su confirmación.";
+          el.saveStatus.className = "status ok";
+        } else {
+          el.saveStatus.textContent = "No se modificó el tipo de diagnóstico.";
+          el.saveStatus.className = "status muted";
+        }
+      } catch {
+        el.saveStatus.textContent = "Error de red al analizar el informe.";
+        el.saveStatus.classList.add("error");
+      } finally {
+        el.btnSugerirTipo.disabled = false;
       }
     });
   }

@@ -12,6 +12,7 @@ import {
   canWriteDiagnostico,
   canManageUsers,
 } from "./lib/roles.mjs";
+import { sugerirTipoDesdeInforme } from "../api/src/lib/sugerirTipoDiagnosticoOpenAI.js";
 import { signToken, verifyToken } from "./lib/jwt.mjs";
 import * as users from "./lib/usersStore.mjs";
 import {
@@ -248,6 +249,25 @@ app.get("/api/diagnosticos", requireAuth, async (req, res) => {
 });
 
 /** Mismo listado con POST + JWT en cuerpo (Static Web Apps / proxy). */
+app.post("/api/sugerir-tipo-diagnostico", requireAuth, async (req, res) => {
+  if (!canWriteDiagnostico(req.auth.roles)) {
+    return res.status(403).json({
+      error: "Sin permiso (se requiere rol usuario o admin para esta acción)",
+    });
+  }
+  try {
+    const out = await sugerirTipoDesdeInforme(req.body?.transcripcion ?? "");
+    if (!out.ok) {
+      return res.status(400).json({ error: out.error });
+    }
+    res.set("Cache-Control", "no-store");
+    res.json({ codigo: out.codigo, motivo: out.motivo });
+  } catch (e) {
+    console.error("[sugerir-tipo-diagnostico]", e);
+    res.status(502).json({ error: "Fallo al consultar el modelo", detalle: String(e?.message || e) });
+  }
+});
+
 app.post("/api/diagnosticos/list", requireAuth, async (req, res) => {
   if (!canReadDiagnosticos(req.auth.roles)) {
     return res.status(403).json({ error: "Sin permiso para ver diagnósticos" });
