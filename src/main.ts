@@ -477,15 +477,16 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
     });
   }
 
-  if (write && el.btnSugerirTipo) {
-    el.btnSugerirTipo.addEventListener("click", async () => {
+  const btnSugerirTipo = el.btnSugerirTipo;
+  if (write && btnSugerirTipo) {
+    btnSugerirTipo.addEventListener("click", async () => {
       const informe = el.transcripcion.value.trim();
       if (!informe) {
         el.saveStatus.textContent = "Escribí texto en el informe antes de detectar el tipo.";
         el.saveStatus.className = "status error";
         return;
       }
-      el.btnSugerirTipo.disabled = true;
+      btnSugerirTipo.disabled = true;
       el.saveStatus.textContent = "Analizando informe…";
       el.saveStatus.className = "status";
       try {
@@ -529,7 +530,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
         el.saveStatus.textContent = "Error de red al analizar el informe.";
         el.saveStatus.classList.add("error");
       } finally {
-        el.btnSugerirTipo.disabled = false;
+        btnSugerirTipo.disabled = false;
       }
     });
   }
