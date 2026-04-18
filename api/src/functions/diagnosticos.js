@@ -51,7 +51,12 @@ app.http("diagnosticos", {
       }
       try {
         const list = useSql ? await listDiagnosticosSql() : await readDiagnosticos(storage);
-        return { jsonBody: list };
+        return {
+          jsonBody: list,
+          headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+          },
+        };
       } catch (e) {
         context.error("[diagnosticos GET]", e);
         return { status: 500, jsonBody: { error: String(e?.message || e) } };

@@ -19,6 +19,7 @@ import {
   isSqlConfigured,
   listDiagnosticosSql,
 } from "../api/src/lib/sqlDiagnosticos.js";
+import { getStorageConnectionString } from "../api/src/lib/storageConnection.js";
 
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".env") });
 
@@ -45,9 +46,18 @@ function maxRecordingMinutesFromEnv() {
   return Math.min(Math.max(parsed, 0.5), 120);
 }
 
+function diagnosticosDbMode() {
+  if (isSqlConfigured()) return "sql";
+  if (getStorageConnectionString()) return "blob";
+  return "none";
+}
+
 app.get("/api/config", (_req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.json({ maxRecordingMinutes: maxRecordingMinutesFromEnv() });
+  res.json({
+    maxRecordingMinutes: maxRecordingMinutesFromEnv(),
+    diagnosticosDb: diagnosticosDbMode(),
+  });
 });
 
 function extractAccessToken(req) {
@@ -229,6 +239,7 @@ app.get("/api/diagnosticos", requireAuth, async (req, res) => {
   }
   try {
     const list = await readDiagnoses();
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.json(list);
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });

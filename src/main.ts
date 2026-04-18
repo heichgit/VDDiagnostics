@@ -469,7 +469,11 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
         }
         el.saveStatus.textContent = "Guardado correctamente";
         el.saveStatus.classList.add("ok");
-        await loadList(el.lista, el.listaEmpty);
+        const saved =
+          data && typeof data === "object" && typeof (data as Diagnostico).id === "string"
+            ? (data as Diagnostico)
+            : undefined;
+        await loadList(el.lista, el.listaEmpty, saved ? { preferFirst: saved } : undefined);
       } catch {
         el.saveStatus.textContent = "Error de red";
         el.saveStatus.classList.add("error");
@@ -480,15 +484,24 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
   void loadList(el.lista, el.listaEmpty);
 }
 
-async function loadList(lista: HTMLUListElement, listaEmpty: HTMLParagraphElement) {
+async function loadList(
+  lista: HTMLUListElement,
+  listaEmpty: HTMLParagraphElement,
+  opts?: { preferFirst?: Diagnostico },
+) {
   try {
-    const res = await apiFetch("/api/diagnosticos");
+    const res = await apiFetch("/api/diagnosticos", { cache: "no-store" });
     const data = await res.json();
     if (!res.ok) {
       listaEmpty.hidden = false;
       return;
     }
-    renderList(lista, listaEmpty, Array.isArray(data) ? data : []);
+    let items: Diagnostico[] = Array.isArray(data) ? (data as Diagnostico[]) : [];
+    const p = opts?.preferFirst;
+    if (p?.id && !items.some((d) => d.id === p.id)) {
+      items = [p, ...items];
+    }
+    renderList(lista, listaEmpty, items);
   } catch {
     listaEmpty.hidden = false;
   }
