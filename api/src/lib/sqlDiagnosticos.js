@@ -1,16 +1,40 @@
 import sql from "mssql";
 
 /**
- * Azure SQL / SQL Server. Prioridad: SQL_CONNECTION_STRING, luego AZURE_SQL_CONNECTION_STRING.
- * Si está definida, GET/POST /api/diagnosticos usan la tabla dbo.Diagnosticos (se crea si no existe).
+ * Azure SQL / SQL Server.
+ * - Application settings: SQL_CONNECTION_STRING o AZURE_SQL_CONNECTION_STRING
+ * - Si la cadena está en "Connection strings" del portal (tipo SQL Azure / SQL Server / Custom),
+ *   Azure expone variables como SQLAZURECONNSTR_<Nombre>, SQLCONNSTR_<Nombre>, CUSTOMCONNSTR_<Nombre>
+ * Si está definida, GET/POST /api/diagnosticos usan dbo.Diagnosticos (se crea si no existe).
  */
 
+function firstNonEmptyFromEnvKeys(predicate) {
+  const env = process.env;
+  const keys = Object.keys(env).filter(predicate).sort();
+  for (const k of keys) {
+    const v = env[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
+}
+
+function connectionStringFromAzurePortalConnectionStrings() {
+  return (
+    firstNonEmptyFromEnvKeys((k) => k.startsWith("SQLAZURECONNSTR_")) ||
+    firstNonEmptyFromEnvKeys((k) => k.startsWith("SQLCONNSTR_")) ||
+    firstNonEmptyFromEnvKeys((k) => k.startsWith("CUSTOMCONNSTR_"))
+  );
+}
+
 export function getSqlConnectionString() {
-  const v =
-    process.env.SQL_CONNECTION_STRING ||
-    process.env.AZURE_SQL_CONNECTION_STRING ||
+  const explicit =
+    (typeof process.env.SQL_CONNECTION_STRING === "string" && process.env.SQL_CONNECTION_STRING.trim()) ||
+    (typeof process.env.AZURE_SQL_CONNECTION_STRING === "string" &&
+      process.env.AZURE_SQL_CONNECTION_STRING.trim()) ||
+    (typeof process.env.DATABASE_URL === "string" && process.env.DATABASE_URL.trim()) ||
     "";
-  return typeof v === "string" ? v.trim() : "";
+  if (explicit) return explicit;
+  return connectionStringFromAzurePortalConnectionStrings();
 }
 
 export function isSqlConfigured() {
