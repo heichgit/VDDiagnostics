@@ -244,11 +244,11 @@ function fichaYDictadoHtml(voice: boolean, maxRecordingMin: number) {
           <label for="estudioTipo">Tipo de estudio</label>
           <select id="estudioTipo">
             <option value="">— Seleccionar —</option>
-            <option value="RX">Radiografía</option>
-            <option value="TC">Tomografía (TC)</option>
-            <option value="RM">Resonancia (RM)</option>
-            <option value="US">Ecografía</option>
-            <option value="Otro">Otro</option>
+            <option value="ECO">ECO</option>
+            <option value="DOPPLER">DOPPLER</option>
+            <option value="VASCULARES">VASCULARES</option>
+            <option value="ECO-TRANSESOFAGICO">ECO-TRANSESOFAGICO</option>
+            <option value="CARDIOINTERNACION">CARDIOINTERNACION</option>
           </select>
         </div>
       </div>
