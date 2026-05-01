@@ -167,13 +167,14 @@ function renderLogin(msg = "") {
 
 async function mountApp(user: User) {
   await loadRecordingConfig();
-  ensureEcoDopplerModalMounted();
   const read = canReadDiagnosticos(user.roles);
   const write = canWriteDiagnostico(user.roles);
   const voice = canTranscribe(user.roles);
   const admin = canManageUsers(user.roles);
   const operadorSolo = !write && !voice && read;
   const maxRecordingMin = getMaxRecordingMinutes();
+
+  ensureEcoDopplerModalMounted(voice, maxRecordingMin);
 
   root.innerHTML = `
     <header class="app-header">

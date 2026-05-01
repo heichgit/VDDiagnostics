@@ -377,6 +377,62 @@ button {
   flex: 1;
 }
 
+.eco-voice-strip {
+  border-top: 1px solid var(--border);
+  padding: 0.65rem 1rem;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.eco-voice-strip-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.eco-voice-target {
+  flex: 1;
+  min-width: min(100%, 220px);
+  font-size: 0.82rem;
+}
+
+.eco-voice-order-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  flex-basis: 100%;
+}
+
+.eco-voice-order-btn {
+  font-size: 0.82rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.eco-voice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.eco-voice-record.recording {
+  box-shadow: 0 0 0 2px var(--danger, #c53);
+}
+
+.eco-voice-status {
+  font-size: 0.78rem;
+  flex-basis: 100%;
+}
+
+.eco-voice-status.ok {
+  color: var(--success);
+}
+
+.eco-voice-status.error {
+  color: var(--danger, #e66);
+}
+
 .eco-doppler-footer {
   display: flex;
   flex-wrap: wrap;

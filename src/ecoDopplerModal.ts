@@ -4,6 +4,10 @@
  * Cálculos: Gradiente mitral = VelLR²×4; Grad pico AO = VelPico²×4; Grad max pulm = VPP²×4
  */
 
+import { apiFetch, getToken } from "./api";
+import { type EcoVoiceKind, interpretEcoVoice, parseEcoVoiceNavigation } from "./ecoDopplerVoice";
+import { formatMaxRecordingLabel } from "./recordingConfig";
+
 export const ECO_DOPPLER_STORAGE_KEY = "vdd_eco_doppler_form";
 
 export type EcoDopplerStored = {
@@ -48,6 +52,85 @@ const FDVI_OPTS = [
   { id: "2", descripcion: "Alteración grado I" },
   { id: "3", descripcion: "Alteración grado II" },
   { id: "4", descripcion: "Alteración grado III o mayor" },
+];
+
+const ECO_FIELD_LABELS: Record<string, string> = {
+  eco_velLLRap: "Velocidad llenado rápido — mitral (m/s)",
+  eco_velLLTELED: "Velocidad telediastólica — mitral (m/s)",
+  eco_gradientePicoMit: "Gradiente máximo mitral (mmHg)",
+  eco_area1: "Área valvular mitral",
+  eco_areaNum: "Área mitral numérica (cm²)",
+  eco_valvula1: "Insuficiencia mitral",
+  eco_fdvi: "Función diastólica VI",
+  eco_velPicoAO: "Velocidad pico aórtica (m/s)",
+  eco_gradPicoAO: "Gradiente pico aórtico (mmHg)",
+  eco_gradMedioAO: "Gradiente medio aórtico (mmHg)",
+  eco_areaAo: "Área valvular aórtica",
+  eco_areaAoNum: "Área aórtica numérica (cm²)",
+  eco_valvula2: "Insuficiencia aórtica",
+  eco_velLLRAPTR: "Velocidad llenado rápido — tricúspide",
+  eco_velLLTELEDTR: "Velocidad telediastólica — tricúspide",
+  eco_valvula3: "Insuficiencia tricúspide",
+  eco_prsPulm: "Presión sistólica pulmonar (mmHg)",
+  eco_vpp: "Velocidad pico pulmonar (m/s)",
+  eco_gradMaxPulm: "Gradiente máximo pulmonar (mmHg)",
+  eco_valvula4: "Insuficiencia pulmonar",
+};
+
+const ECO_VOICE_DECIMAL_IDS = new Set([
+  "eco_velLLRap",
+  "eco_velLLTELED",
+  "eco_gradientePicoMit",
+  "eco_areaNum",
+  "eco_areaAoNum",
+  "eco_velPicoAO",
+  "eco_gradPicoAO",
+  "eco_gradMedioAO",
+  "eco_velLLRAPTR",
+  "eco_velLLTELEDTR",
+  "eco_prsPulm",
+  "eco_vpp",
+  "eco_gradMaxPulm",
+]);
+
+function ecoVoiceFieldKind(fieldId: string): EcoVoiceKind | null {
+  if (ECO_VOICE_DECIMAL_IDS.has(fieldId)) return "decimal";
+  if (fieldId === "eco_area1" || fieldId === "eco_areaAo") return "motilidad";
+  if (fieldId === "eco_valvula1" || fieldId === "eco_valvula2" || fieldId === "eco_valvula3" || fieldId === "eco_valvula4")
+    return "valvula";
+  if (fieldId === "eco_fdvi") return "fdvi";
+  return null;
+}
+
+function ecoVoiceOptsForField(fieldId: string) {
+  if (fieldId === "eco_area1" || fieldId === "eco_areaAo") return MOTILIDAD;
+  if (fieldId.startsWith("eco_valvula")) return FUNCION_VALVULA;
+  if (fieldId === "eco_fdvi") return FDVI_OPTS;
+  return undefined;
+}
+
+/** Orden de lectura/dictado (coincide con el formulario de arriba a abajo). */
+const ECO_VOICE_ORDER: readonly string[] = [
+  "eco_velLLRap",
+  "eco_velLLTELED",
+  "eco_gradientePicoMit",
+  "eco_area1",
+  "eco_areaNum",
+  "eco_valvula1",
+  "eco_fdvi",
+  "eco_velPicoAO",
+  "eco_gradPicoAO",
+  "eco_gradMedioAO",
+  "eco_areaAo",
+  "eco_areaAoNum",
+  "eco_valvula2",
+  "eco_velLLRAPTR",
+  "eco_velLLTELEDTR",
+  "eco_valvula3",
+  "eco_prsPulm",
+  "eco_vpp",
+  "eco_gradMaxPulm",
+  "eco_valvula4",
 ];
 
 function esc(s: string): string {
@@ -244,6 +327,20 @@ function modalHtml(): string {
       </fieldset>
       <p class="eco-status" id="eco_modalStatus" role="status"></p>
     </div>
+    <div class="eco-voice-strip" id="ecoVoiceStrip" hidden>
+      <div class="eco-voice-strip-inner">
+        <span id="ecoVoiceFieldLabel" class="eco-voice-target muted">Orden del formulario — tocá un campo o usá «Siguiente» / «Anterior»</span>
+        <div class="eco-voice-order-row">
+          <button type="button" class="btn-ghost eco-voice-order-btn" id="ecoVoicePrev" aria-label="Campo anterior en el orden del formulario">← Anterior</button>
+          <button type="button" class="btn-ghost eco-voice-order-btn" id="ecoVoiceNext" aria-label="Campo siguiente en el orden del formulario">Siguiente →</button>
+        </div>
+        <div class="eco-voice-actions">
+          <button type="button" class="btn-record eco-voice-record" id="ecoVoiceRecord" aria-label="Grabar dictado para el campo activo">Grabar</button>
+          <button type="button" class="btn-ghost" id="ecoVoiceStop" disabled>Detener y aplicar</button>
+        </div>
+        <span id="ecoVoiceMicStatus" class="eco-voice-status muted" role="status"></span>
+      </div>
+    </div>
     <div class="eco-doppler-footer">
       <button type="button" class="btn-ghost" id="eco_btnLimpiar">Limpiar</button>
       <button type="button" class="btn-primary" id="eco_btnGuardarModal">Guardar mediciones</button>
@@ -252,7 +349,12 @@ function modalHtml(): string {
 </div>`;
 }
 
-let wired = false;
+let wiredBase = false;
+let wiredVoice = false;
+let lastVoiceCapability = false;
+let lastMaxRecordingMin = 15;
+/** Detiene grabación Eco sin transcribir (cierre de modal). */
+let ecoVoiceAbortRecording: (() => void) | null = null;
 
 function wireNumeric(panel: HTMLElement, id: string) {
   const el = panel.querySelector<HTMLInputElement>(`#${id}`);
@@ -262,108 +364,358 @@ function wireNumeric(panel: HTMLElement, id: string) {
   });
 }
 
-/** Inserta el overlay en document.body y enlaza eventos (una sola vez). */
-export function ensureEcoDopplerModalMounted(): void {
-  if (wired) return;
-  if (!document.getElementById("ecoDopplerOverlay")) {
-    document.body.insertAdjacentHTML("beforeend", modalHtml());
-  }
-  const overlay = document.getElementById("ecoDopplerOverlay");
-  const panel = overlay?.querySelector(".eco-doppler-modal");
-  if (!overlay || !panel) return;
+function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
+  const lbl = panel.querySelector<HTMLSpanElement>("#ecoVoiceFieldLabel");
+  const btnRec = panel.querySelector<HTMLButtonElement>("#ecoVoiceRecord");
+  const btnStop = panel.querySelector<HTMLButtonElement>("#ecoVoiceStop");
+  const btnPrev = panel.querySelector<HTMLButtonElement>("#ecoVoicePrev");
+  const btnNext = panel.querySelector<HTMLButtonElement>("#ecoVoiceNext");
+  const mic = panel.querySelector<HTMLSpanElement>("#ecoVoiceMicStatus");
+  if (!lbl || !btnRec || !btnStop || !mic || !btnPrev || !btnNext) return;
 
-  const idsNum = [
-    "eco_velLLRap",
-    "eco_velLLTELED",
-    "eco_gradientePicoMit",
-    "eco_areaNum",
-    "eco_areaAoNum",
-    "eco_velPicoAO",
-    "eco_gradPicoAO",
-    "eco_gradMedioAO",
-    "eco_velLLRAPTR",
-    "eco_velLLTELEDTR",
-    "eco_prsPulm",
-    "eco_vpp",
-    "eco_gradMaxPulm",
-  ];
-  for (const id of idsNum) wireNumeric(panel as HTMLElement, id);
+  let lastTargetId: string | null = null;
+  let orderIdx = 0;
+  let mediaRecorder: MediaRecorder | null = null;
+  let chunks: BlobPart[] = [];
+  let stream: MediaStream | null = null;
+  let recordingLimitTimer: ReturnType<typeof setTimeout> | null = null;
+  let discardEcoBlob = false;
+  const maxRecordingMs = Math.max(1, maxRecordingMin) * 60 * 1000;
+  const nOrder = ECO_VOICE_ORDER.length;
 
-  const velLL = panel.querySelector<HTMLInputElement>("#eco_velLLRap");
-  const gradMit = panel.querySelector<HTMLInputElement>("#eco_gradientePicoMit");
-  velLL?.addEventListener("input", () => {
-    if (gradMit) gradMit.value = gradFromVel(velLL.value);
-  });
-
-  const velAo = panel.querySelector<HTMLInputElement>("#eco_velPicoAO");
-  const gradAo = panel.querySelector<HTMLInputElement>("#eco_gradPicoAO");
-  velAo?.addEventListener("input", () => {
-    if (gradAo) gradAo.value = gradFromVel(velAo.value);
-  });
-
-  const vpp = panel.querySelector<HTMLInputElement>("#eco_vpp");
-  const gradMp = panel.querySelector<HTMLInputElement>("#eco_gradMaxPulm");
-  vpp?.addEventListener("input", () => {
-    if (gradMp) gradMp.value = gradFromVel(vpp.value);
-  });
-
-  const statusEl = panel.querySelector<HTMLParagraphElement>("#eco_modalStatus");
-
-  panel.querySelector("#eco_btnCerrar")?.addEventListener("click", () => closeEcoDopplerModal());
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) closeEcoDopplerModal();
-  });
-
-  panel.querySelector("#eco_btnLimpiar")?.addEventListener("click", () => {
-    const defaults: EcoDopplerStored = {
-      area1: "1",
-      areaNum: "",
-      valvula1: "8",
-      fdvi: "1",
-      velLLRap: "",
-      velLLTELED: "",
-      gradientePicoMit: "",
-      areaAo: "1",
-      areaAoNum: "",
-      valvula2: "8",
-      velPicoAO: "",
-      gradPicoAO: "",
-      gradMedioAO: "",
-      valvula3: "8",
-      velLLRAPTR: "",
-      velLLTELEDTR: "",
-      prsPulm: "",
-      valvula4: "8",
-      vpp: "",
-      gradMaxPulm: "",
-    };
-    apply(panel as HTMLElement, defaults);
-    if (statusEl) {
-      statusEl.textContent = "";
-      statusEl.className = "eco-status";
+  function clearRecordingLimitTimer() {
+    if (recordingLimitTimer != null) {
+      clearTimeout(recordingLimitTimer);
+      recordingLimitTimer = null;
     }
-  });
+  }
 
-  panel.querySelector("#eco_btnGuardarModal")?.addEventListener("click", () => {
-    const st = collect(panel as HTMLElement);
-    const err = validateEcoDopplerForm(st);
-    if (err) {
-      globalThis.alert(err);
+  function syncOrderIndexFromId(id: string | null) {
+    if (!id) return;
+    const ix = ECO_VOICE_ORDER.indexOf(id);
+    if (ix >= 0) orderIdx = ix;
+  }
+
+  function focusOrderedAt(index: number): void {
+    orderIdx = ((index % nOrder) + nOrder) % nOrder;
+    const id = ECO_VOICE_ORDER[orderIdx];
+    const el = panel.querySelector<HTMLElement>(`#${id}`);
+    if (!el) return;
+    lastTargetId = id;
+    el.focus();
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    updateTargetLabel();
+  }
+
+  function moveOrdered(delta: number): void {
+    if (!lastTargetId) {
+      focusOrderedAt(delta > 0 ? 0 : nOrder - 1);
       return;
     }
-    sessionStorage.setItem(ECO_DOPPLER_STORAGE_KEY, JSON.stringify(st));
-    if (statusEl) {
-      statusEl.textContent = "Mediciones guardadas. Se enviarán al guardar el diagnóstico.";
-      statusEl.className = "eco-status ok";
+    focusOrderedAt(orderIdx + delta);
+  }
+
+  function updateTargetLabel() {
+    if (!lastTargetId) {
+      lbl.textContent = `Orden del formulario (${nOrder} campos). «Siguiente» / «Anterior», o tocá un campo. Por voz: «siguiente campo» / «campo anterior».`;
+      return;
     }
-    closeEcoDopplerModal();
+    const kind = ecoVoiceFieldKind(lastTargetId);
+    const name = ECO_FIELD_LABELS[lastTargetId] ?? lastTargetId;
+    const pos = ECO_VOICE_ORDER.indexOf(lastTargetId);
+    const idxLabel = pos >= 0 ? ` · ${pos + 1}/${nOrder}` : "";
+    lbl.textContent = kind ? `Dictado${idxLabel} → ${name}` : `${name} (sin dictado)`;
+  }
+
+  function setRecordingUi(active: boolean) {
+    btnRec.disabled = active;
+    btnStop.disabled = !active;
+    btnPrev.disabled = active;
+    btnNext.disabled = active;
+    btnRec.classList.toggle("recording", active);
+    if (!active) mic.textContent = "";
+    mic.classList.remove("error", "ok");
+  }
+
+  panel.addEventListener(
+    "focusin",
+    (e) => {
+      const t = e.target;
+      if (!(t instanceof HTMLInputElement) && !(t instanceof HTMLSelectElement)) return;
+      const id = t.id;
+      if (!id.startsWith("eco_")) return;
+      if (!ecoVoiceFieldKind(id)) return;
+      lastTargetId = id;
+      syncOrderIndexFromId(id);
+      updateTargetLabel();
+    },
+    true,
+  );
+
+  btnPrev.addEventListener("click", () => {
+    mic.textContent = "";
+    mic.classList.remove("error", "ok");
+    moveOrdered(-1);
   });
 
-  wired = true;
+  btnNext.addEventListener("click", () => {
+    mic.textContent = "";
+    mic.classList.remove("error", "ok");
+    moveOrdered(1);
+  });
+
+  async function transcribeAndApply(blob: Blob) {
+    mic.textContent = "Transcribiendo…";
+    mic.classList.remove("error", "ok");
+    const fd = new FormData();
+    fd.append("audio", blob, "eco.webm");
+    const tok = getToken()?.trim();
+    if (tok) fd.append("_vdd_jwt", tok);
+    const res = await apiFetch("/api/transcribe", { method: "POST", body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      mic.textContent = typeof data.error === "string" ? data.error : "Error al transcribir";
+      mic.classList.add("error");
+      return;
+    }
+    const text = typeof data.text === "string" ? data.text : "";
+
+    const nav = parseEcoVoiceNavigation(text);
+    if (nav) {
+      if (!lastTargetId) {
+        focusOrderedAt(nav === "next" ? 0 : nOrder - 1);
+      } else {
+        moveOrdered(nav === "next" ? 1 : -1);
+      }
+      mic.textContent = nav === "next" ? "Campo siguiente." : "Campo anterior.";
+      mic.classList.add("ok");
+      return;
+    }
+
+    const tid = lastTargetId;
+    if (!tid || !ecoVoiceFieldKind(tid)) {
+      mic.textContent = "No hay campo activo. Usá «Siguiente» o tocá un campo.";
+      mic.classList.add("error");
+      return;
+    }
+    const kind = ecoVoiceFieldKind(tid)!;
+    const opts = kind === "decimal" ? undefined : ecoVoiceOptsForField(tid);
+    const r = interpretEcoVoice(kind, text, opts);
+    if (!r.ok) {
+      mic.textContent = r.message;
+      mic.classList.add("error");
+      return;
+    }
+    const el = panel.querySelector<HTMLInputElement | HTMLSelectElement>(`#${tid}`);
+    if (!el) {
+      mic.textContent = "Campo no encontrado.";
+      mic.classList.add("error");
+      return;
+    }
+    el.value = r.value;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    const preview = text.trim().slice(0, 72);
+    mic.textContent = `Aplicado: «${preview}${text.trim().length > 72 ? "…" : ""}»`;
+    mic.classList.add("ok");
+  }
+
+  ecoVoiceAbortRecording = () => {
+    clearRecordingLimitTimer();
+    if (!mediaRecorder || mediaRecorder.state !== "recording") {
+      stream?.getTracks().forEach((t) => t.stop());
+      stream = null;
+      setRecordingUi(false);
+      return;
+    }
+    discardEcoBlob = true;
+    mediaRecorder.stop();
+  };
+
+  btnRec.addEventListener("click", async () => {
+    discardEcoBlob = false;
+    mic.textContent = "";
+    mic.classList.remove("error", "ok");
+    if (!lastTargetId || !ecoVoiceFieldKind(lastTargetId)) {
+      focusOrderedAt(0);
+    }
+    if (!lastTargetId || !ecoVoiceFieldKind(lastTargetId)) {
+      mic.textContent = "No hay campos dictables en el formulario.";
+      mic.classList.add("error");
+      return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      chunks = [];
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size) chunks.push(e.data);
+      };
+      mediaRecorder.onstop = async () => {
+        clearRecordingLimitTimer();
+        const blob = new Blob(chunks, { type: mediaRecorder?.mimeType || "audio/webm" });
+        stream?.getTracks().forEach((t) => t.stop());
+        stream = null;
+        mediaRecorder = null;
+        chunks = [];
+        setRecordingUi(false);
+        if (discardEcoBlob) {
+          discardEcoBlob = false;
+          mic.textContent = "";
+          return;
+        }
+        try {
+          await transcribeAndApply(blob);
+        } catch {
+          mic.textContent = "Error de red al transcribir.";
+          mic.classList.add("error");
+        }
+      };
+      mediaRecorder.start();
+      clearRecordingLimitTimer();
+      recordingLimitTimer = setTimeout(() => {
+        recordingLimitTimer = null;
+        if (mediaRecorder?.state === "recording") {
+          mic.textContent = `Límite ${formatMaxRecordingLabel(maxRecordingMin)} alcanzado; deteniendo…`;
+          mediaRecorder.stop();
+        }
+      }, maxRecordingMs);
+      setRecordingUi(true);
+    } catch (e) {
+      mic.textContent = e instanceof Error ? e.message : "No se pudo usar el micrófono";
+      mic.classList.add("error");
+    }
+  });
+
+  btnStop.addEventListener("click", () => {
+    clearRecordingLimitTimer();
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  });
+}
+
+/** Inserta el overlay en document.body y enlaza eventos (una sola vez). */
+export function ensureEcoDopplerModalMounted(canVoiceDictate = lastVoiceCapability, maxRecordingMin?: number): void {
+  if (maxRecordingMin !== undefined && Number.isFinite(maxRecordingMin) && maxRecordingMin > 0) {
+    lastMaxRecordingMin = maxRecordingMin;
+  }
+  lastVoiceCapability = canVoiceDictate;
+
+  if (!wiredBase) {
+    if (!document.getElementById("ecoDopplerOverlay")) {
+      document.body.insertAdjacentHTML("beforeend", modalHtml());
+    }
+    const overlay = document.getElementById("ecoDopplerOverlay");
+    const panel = overlay?.querySelector(".eco-doppler-modal");
+    if (!overlay || !panel) return;
+
+    const idsNum = [
+      "eco_velLLRap",
+      "eco_velLLTELED",
+      "eco_gradientePicoMit",
+      "eco_areaNum",
+      "eco_areaAoNum",
+      "eco_velPicoAO",
+      "eco_gradPicoAO",
+      "eco_gradMedioAO",
+      "eco_velLLRAPTR",
+      "eco_velLLTELEDTR",
+      "eco_prsPulm",
+      "eco_vpp",
+      "eco_gradMaxPulm",
+    ];
+    for (const id of idsNum) wireNumeric(panel as HTMLElement, id);
+
+    const velLL = panel.querySelector<HTMLInputElement>("#eco_velLLRap");
+    const gradMit = panel.querySelector<HTMLInputElement>("#eco_gradientePicoMit");
+    velLL?.addEventListener("input", () => {
+      if (gradMit) gradMit.value = gradFromVel(velLL.value);
+    });
+
+    const velAo = panel.querySelector<HTMLInputElement>("#eco_velPicoAO");
+    const gradAo = panel.querySelector<HTMLInputElement>("#eco_gradPicoAO");
+    velAo?.addEventListener("input", () => {
+      if (gradAo) gradAo.value = gradFromVel(velAo.value);
+    });
+
+    const vpp = panel.querySelector<HTMLInputElement>("#eco_vpp");
+    const gradMp = panel.querySelector<HTMLInputElement>("#eco_gradMaxPulm");
+    vpp?.addEventListener("input", () => {
+      if (gradMp) gradMp.value = gradFromVel(vpp.value);
+    });
+
+    const statusEl = panel.querySelector<HTMLParagraphElement>("#eco_modalStatus");
+
+    panel.querySelector("#eco_btnCerrar")?.addEventListener("click", () => closeEcoDopplerModal());
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) closeEcoDopplerModal();
+    });
+
+    panel.querySelector("#eco_btnLimpiar")?.addEventListener("click", () => {
+      const defaults: EcoDopplerStored = {
+        area1: "1",
+        areaNum: "",
+        valvula1: "8",
+        fdvi: "1",
+        velLLRap: "",
+        velLLTELED: "",
+        gradientePicoMit: "",
+        areaAo: "1",
+        areaAoNum: "",
+        valvula2: "8",
+        velPicoAO: "",
+        gradPicoAO: "",
+        gradMedioAO: "",
+        valvula3: "8",
+        velLLRAPTR: "",
+        velLLTELEDTR: "",
+        prsPulm: "",
+        valvula4: "8",
+        vpp: "",
+        gradMaxPulm: "",
+      };
+      apply(panel as HTMLElement, defaults);
+      if (statusEl) {
+        statusEl.textContent = "";
+        statusEl.className = "eco-status";
+      }
+    });
+
+    panel.querySelector("#eco_btnGuardarModal")?.addEventListener("click", () => {
+      const st = collect(panel as HTMLElement);
+      const err = validateEcoDopplerForm(st);
+      if (err) {
+        globalThis.alert(err);
+        return;
+      }
+      sessionStorage.setItem(ECO_DOPPLER_STORAGE_KEY, JSON.stringify(st));
+      if (statusEl) {
+        statusEl.textContent = "Mediciones guardadas. Se enviarán al guardar el diagnóstico.";
+        statusEl.className = "eco-status ok";
+      }
+      closeEcoDopplerModal();
+    });
+
+    wiredBase = true;
+  }
+
+  const overlay2 = document.getElementById("ecoDopplerOverlay");
+  const panel2 = overlay2?.querySelector(".eco-doppler-modal") as HTMLElement | null;
+  if (!panel2) return;
+
+  const strip = panel2.querySelector<HTMLElement>("#ecoVoiceStrip");
+  if (strip) strip.hidden = !canVoiceDictate;
+
+  if (canVoiceDictate && !wiredVoice) {
+    wireEcoVoiceStrip(panel2, lastMaxRecordingMin);
+    wiredVoice = true;
+  }
 }
 
 export function openEcoDopplerModal(): void {
-  ensureEcoDopplerModalMounted();
+  ensureEcoDopplerModalMounted(lastVoiceCapability, lastMaxRecordingMin);
   const overlay = document.getElementById("ecoDopplerOverlay");
   const panel = overlay?.querySelector(".eco-doppler-modal");
   if (!overlay || !panel) return;
@@ -394,6 +746,7 @@ export function openEcoDopplerModal(): void {
 }
 
 export function closeEcoDopplerModal(): void {
+  ecoVoiceAbortRecording?.();
   const overlay = document.getElementById("ecoDopplerOverlay");
   if (!overlay) return;
   overlay.hidden = true;
