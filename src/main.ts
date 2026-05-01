@@ -12,6 +12,13 @@ import {
   htmlOpcionesTipoDiagnostico,
   normalizarCodigoTipoDiagnostico,
 } from "./diagnosticoTipos";
+import {
+  type EcoDopplerStored,
+  clearStoredEcoDoppler,
+  ensureEcoDopplerModalMounted,
+  getStoredEcoDoppler,
+  openEcoDopplerModal,
+} from "./ecoDopplerModal";
 import { formatMaxRecordingLabel, getMaxRecordingMinutes, loadRecordingConfig } from "./recordingConfig";
 
 type Diagnostico = {
@@ -23,6 +30,7 @@ type Diagnostico = {
   transcripcion: string;
   notas: string;
   creadoEn: string;
+  ecoDoppler?: EcoDopplerStored | Record<string, unknown>;
 };
 
 /** Cuántos ítems mostrar en “Últimos registros” (más recientes primero). */
@@ -159,6 +167,7 @@ function renderLogin(msg = "") {
 
 async function mountApp(user: User) {
   await loadRecordingConfig();
+  ensureEcoDopplerModalMounted();
   const read = canReadDiagnosticos(user.roles);
   const write = canWriteDiagnostico(user.roles);
   const voice = canTranscribe(user.roles);
@@ -259,6 +268,9 @@ function fichaYDictadoHtml(voice: boolean, maxRecordingMin: number) {
       <div>
         <label for="tipoDiagnostico">Tipo de diagnóstico</label>
         <select id="tipoDiagnostico">${htmlOpcionesTipoDiagnostico()}</select>
+      </div>
+      <div class="actions eco-doppler-row">
+        <button type="button" class="btn-ghost" id="btnEcoDoppler">Eco Doppler</button>
       </div>
     </div>
 
@@ -361,6 +373,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
     saveStatus: root.querySelector<HTMLParagraphElement>("#saveStatus")!,
     lista: root.querySelector<HTMLUListElement>("#lista")!,
     listaEmpty: root.querySelector<HTMLParagraphElement>("#listaEmpty")!,
+    btnEcoDoppler: root.querySelector<HTMLButtonElement>("#btnEcoDoppler"),
   };
 
   if (!write) {
@@ -369,6 +382,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
     el.imagenRef.disabled = true;
     el.tipoDiagnostico.disabled = true;
     if (el.btnSugerirTipo) el.btnSugerirTipo.disabled = true;
+    if (el.btnEcoDoppler) el.btnEcoDoppler.disabled = true;
     el.transcripcion.disabled = true;
     el.notas.disabled = true;
     el.btnGuardar.disabled = true;
@@ -477,6 +491,10 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
     });
   }
 
+  if (write && el.btnEcoDoppler) {
+    el.btnEcoDoppler.addEventListener("click", () => openEcoDopplerModal());
+  }
+
   const btnSugerirTipo = el.btnSugerirTipo;
   if (write && btnSugerirTipo) {
     btnSugerirTipo.addEventListener("click", async () => {
@@ -540,6 +558,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
       el.saveStatus.textContent = "Guardando…";
       el.saveStatus.className = "status";
       try {
+        const ecoPayload = getStoredEcoDoppler();
         const body = {
           pacienteRef: el.pacienteRef.value,
           estudioTipo: el.estudioTipo.value,
@@ -547,6 +566,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
           tipoDiagnostico: normalizarCodigoTipoDiagnostico(Number(el.tipoDiagnostico.value)),
           transcripcion: el.transcripcion.value,
           notas: el.notas.value,
+          ...(ecoPayload ? { ecoDoppler: ecoPayload } : {}),
         };
         const res = await apiFetch("/api/diagnosticos", {
           method: "POST",
@@ -561,6 +581,7 @@ function wireEditor(voice: boolean, write: boolean, maxRecordingMin: number) {
         }
         el.saveStatus.textContent = "Guardado correctamente";
         el.saveStatus.classList.add("ok");
+        clearStoredEcoDoppler();
         const saved =
           data && typeof data === "object" && typeof (data as Diagnostico).id === "string"
             ? (data as Diagnostico)
@@ -620,7 +641,11 @@ function renderList(lista: HTMLUListElement, listaEmpty: HTMLParagraphElement, i
   for (const d of items.slice(0, LISTA_DIAGNOSTICOS_MAX)) {
     const li = document.createElement("li");
     const tipoLabel = etiquetaTipoDiagnostico(d.tipoDiagnostico ?? 0);
-    const meta = [tipoLabel, d.pacienteRef, d.estudioTipo, d.imagenRef].filter(Boolean).join(" · ");
+    const ecoHint =
+      d.ecoDoppler && typeof d.ecoDoppler === "object" ? "Eco Doppler" : "";
+    const meta = [ecoHint, tipoLabel, d.pacienteRef, d.estudioTipo, d.imagenRef]
+      .filter(Boolean)
+      .join(" · ");
     const snippet = d.transcripcion || d.notas || "(sin texto)";
     li.innerHTML = `
       <div class="meta">${escapeHtml(meta || "Sin referencias")} · ${escapeHtml(fmtDate(d.creadoEn))}</div>

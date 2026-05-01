@@ -84,6 +84,7 @@ async function ensureSchema(p) {
         tipoDiagnostico INT NOT NULL CONSTRAINT DF_Diagnosticos_tipoDiagnostico DEFAULT (0),
         transcripcion NVARCHAR(MAX) NOT NULL CONSTRAINT DF_Diagnosticos_transcripcion DEFAULT (N''),
         notas NVARCHAR(MAX) NOT NULL CONSTRAINT DF_Diagnosticos_notas DEFAULT (N''),
+        ecoDopplerJson NVARCHAR(MAX) NULL,
         creadoEn DATETIME2(3) NOT NULL
       );
       CREATE INDEX IX_Diagnosticos_creadoEn ON dbo.Diagnosticos (creadoEn DESC);
@@ -106,6 +107,19 @@ async function ensureTipoDiagnosticoColumn(p) {
   `);
 }
 
+async function ensureEcoDopplerJsonColumn(p) {
+  await p.request().query(`
+    IF EXISTS (SELECT 1 FROM sys.tables WHERE object_id = OBJECT_ID(N'dbo.Diagnosticos'))
+    AND NOT EXISTS (
+      SELECT 1 FROM sys.columns
+      WHERE object_id = OBJECT_ID(N'dbo.Diagnosticos') AND name = N'ecoDopplerJson'
+    )
+    BEGIN
+      ALTER TABLE dbo.Diagnosticos ADD ecoDopplerJson NVARCHAR(MAX) NULL;
+    END
+  `);
+}
+
 function rowToEntry(r) {
   const creadoEn =
     r.creadoEn instanceof Date
@@ -118,7 +132,16 @@ function rowToEntry(r) {
   const tipoDiagnostico = Number.isFinite(tNum)
     ? Math.min(Math.max(Math.floor(tNum), 0), 36)
     : 0;
-  return {
+  let ecoDoppler = null;
+  const ej = r.ecoDopplerJson;
+  if (ej != null && String(ej).trim()) {
+    try {
+      ecoDoppler = JSON.parse(String(ej));
+    } catch {
+      ecoDoppler = null;
+    }
+  }
+  const entry = {
     id: String(r.id),
     pacienteRef: r.pacienteRef != null ? String(r.pacienteRef) : "",
     estudioTipo: r.estudioTipo != null ? String(r.estudioTipo) : "",
@@ -128,6 +151,8 @@ function rowToEntry(r) {
     notas: r.notas != null ? String(r.notas) : "",
     creadoEn,
   };
+  if (ecoDoppler != null) entry.ecoDoppler = ecoDoppler;
+  return entry;
 }
 
 /**
@@ -138,8 +163,9 @@ export async function listDiagnosticosSql() {
   const p = await getPool();
   await ensureSchema(p);
   await ensureTipoDiagnosticoColumn(p);
+  await ensureEcoDopplerJsonColumn(p);
   const result = await p.request().query(`
-    SELECT id, pacienteRef, estudioTipo, imagenRef, tipoDiagnostico, transcripcion, notas, creadoEn
+    SELECT id, pacienteRef, estudioTipo, imagenRef, tipoDiagnostico, transcripcion, notas, ecoDopplerJson, creadoEn
     FROM dbo.Diagnosticos
     ORDER BY creadoEn DESC
   `);
@@ -147,17 +173,26 @@ export async function listDiagnosticosSql() {
 }
 
 /**
- * @param {{ id: string, pacienteRef: string, estudioTipo: string, imagenRef: string, tipoDiagnostico?: number, transcripcion: string, notas: string, creadoEn: string }} entry
+ * @param {{ id: string, pacienteRef: string, estudioTipo: string, imagenRef: string, tipoDiagnostico?: number, transcripcion: string, notas: string, ecoDoppler?: unknown, creadoEn: string }} entry
  */
 export async function insertDiagnosticoSql(entry) {
   const p = await getPool();
   await ensureSchema(p);
   await ensureTipoDiagnosticoColumn(p);
+  await ensureEcoDopplerJsonColumn(p);
   const creado = new Date(entry.creadoEn);
   const tipo =
     typeof entry.tipoDiagnostico === "number" && Number.isFinite(entry.tipoDiagnostico)
       ? Math.min(Math.max(Math.floor(entry.tipoDiagnostico), 0), 36)
       : 0;
+  let ecoStr = null;
+  if (entry.ecoDoppler != null && typeof entry.ecoDoppler === "object") {
+    try {
+      ecoStr = JSON.stringify(entry.ecoDoppler).slice(0, 120000);
+    } catch {
+      ecoStr = null;
+    }
+  }
   await p
     .request()
     .input("id", sql.VarChar(36), entry.id)
@@ -167,10 +202,13 @@ export async function insertDiagnosticoSql(entry) {
     .input("tipoDiagnostico", sql.Int, tipo)
     .input("transcripcion", sql.NVarChar(), entry.transcripcion)
     .input("notas", sql.NVarChar(), entry.notas)
+    .input("ecoDopplerJson", sql.NVarChar(sql.MAX), ecoStr)
     .input("creadoEn", sql.DateTime2(3), creado)
     .query(`
-      INSERT INTO dbo.Diagnosticos (id, pacienteRef, estudioTipo, imagenRef, tipoDiagnostico, transcripcion, notas, creadoEn)
-      VALUES (@id, @pacienteRef, @estudioTipo, @imagenRef, @tipoDiagnostico, @transcripcion, @notas, @creadoEn)
+      INSERT INTO dbo.Diagnosticos (id, pacienteRef, estudioTipo, imagenRef, tipoDiagnostico, transcripcion, notas, ecoDopplerJson, creadoEn)
+      VALUES (@id, @pacienteRef, @estudioTipo, @imagenRef, @tipoDiagnostico, @transcripcion, @notas, @ecoDopplerJson, @creadoEn)
     `);
-  return { ...entry, tipoDiagnostico: tipo };
+  const out = { ...entry, tipoDiagnostico: tipo };
+  if (entry.ecoDoppler != null) out.ecoDoppler = entry.ecoDoppler;
+  return out;
 }

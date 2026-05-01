@@ -300,6 +300,15 @@ app.post("/api/diagnosticos", requireAuth, async (req, res) => {
 
   try {
     const tipoDiagnostico = normalizarTipoDiagnostico(tipoRaw);
+    let ecoDoppler;
+    const rawEco = req.body?.ecoDoppler;
+    if (rawEco != null && typeof rawEco === "object" && !Array.isArray(rawEco)) {
+      try {
+        ecoDoppler = JSON.parse(JSON.stringify(rawEco));
+      } catch {
+        ecoDoppler = undefined;
+      }
+    }
     const entry = {
       id: crypto.randomUUID(),
       pacienteRef: String(pacienteRef).trim(),
@@ -310,6 +319,7 @@ app.post("/api/diagnosticos", requireAuth, async (req, res) => {
       notas: String(notas).trim(),
       creadoEn: new Date().toISOString(),
     };
+    if (ecoDoppler !== undefined) entry.ecoDoppler = ecoDoppler;
     if (isSqlConfigured()) {
       const saved = await insertDiagnosticoSql(entry);
       return res.status(201).json(saved);

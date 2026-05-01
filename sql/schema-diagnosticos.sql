@@ -11,6 +11,7 @@ BEGIN
     tipoDiagnostico INT NOT NULL CONSTRAINT DF_Diagnosticos_tipoDiagnostico DEFAULT (0),
     transcripcion NVARCHAR(MAX) NOT NULL CONSTRAINT DF_Diagnosticos_transcripcion DEFAULT (N''),
     notas NVARCHAR(MAX) NOT NULL CONSTRAINT DF_Diagnosticos_notas DEFAULT (N''),
+    ecoDopplerJson NVARCHAR(MAX) NULL,
     creadoEn DATETIME2(3) NOT NULL
   );
   CREATE INDEX IX_Diagnosticos_creadoEn ON dbo.Diagnosticos (creadoEn DESC);
@@ -20,3 +21,4 @@ GO
 -- Si la tabla ya existía sin esta columna, en Azure la API ejecuta un ALTER equivalente al iniciar.
 -- Manual:
 -- ALTER TABLE dbo.Diagnosticos ADD tipoDiagnostico INT NOT NULL CONSTRAINT DF_Diagnosticos_tipoDiagMigr DEFAULT (0);
+-- ALTER TABLE dbo.Diagnosticos ADD ecoDopplerJson NVARCHAR(MAX) NULL;

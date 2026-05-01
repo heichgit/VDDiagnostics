@@ -11,6 +11,16 @@ import {
 } from "../lib/sqlDiagnosticos.js";
 import { normalizarTipoDiagnostico } from "../lib/tipoDiagnostico.js";
 
+/** @param {unknown} raw */
+function cloneEcoDopplerPayload(raw) {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  try {
+    return JSON.parse(JSON.stringify(raw));
+  } catch {
+    return undefined;
+  }
+}
+
 app.http("diagnosticos", {
   methods: ["GET", "POST"],
   authLevel: "anonymous",
@@ -78,6 +88,7 @@ app.http("diagnosticos", {
     const transcripcion = String(postBody.transcripcion ?? "").trim();
     const notas = String(postBody.notas ?? "").trim();
     const tipoDiagnostico = normalizarTipoDiagnostico(postBody.tipoDiagnostico);
+    const ecoDoppler = cloneEcoDopplerPayload(postBody.ecoDoppler);
 
     if (!transcripcion && !notas) {
       return { status: 400, jsonBody: { error: "Indica transcripción o notas" } };
@@ -93,6 +104,7 @@ app.http("diagnosticos", {
       notas,
       creadoEn: new Date().toISOString(),
     };
+    if (ecoDoppler !== undefined) entry.ecoDoppler = ecoDoppler;
 
     if (useSql) {
       try {
