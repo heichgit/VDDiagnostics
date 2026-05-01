@@ -376,10 +376,11 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
   let lastTargetId: string | null = null;
   let orderIdx = 0;
   let mediaRecorder: MediaRecorder | null = null;
-  let chunks: BlobPart[] = [];
   let stream: MediaStream | null = null;
   let recordingLimitTimer: ReturnType<typeof setTimeout> | null = null;
   let discardEcoBlob = false;
+  /** Evita iniciar otra grabación hasta terminar la transcripción (corrige blob vacío / recorder pisado). */
+  let transcribeBusy = false;
   const maxRecordingMs = Math.max(1, maxRecordingMin) * 60 * 1000;
   const nOrder = ECO_VOICE_ORDER.length;
 
@@ -427,14 +428,13 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     lbl.textContent = kind ? `Dictado${idxLabel} → ${name}` : `${name} (sin dictado)`;
   }
 
-  function setRecordingUi(active: boolean) {
-    btnRec.disabled = active;
-    btnStop.disabled = !active;
-    btnPrev.disabled = active;
-    btnNext.disabled = active;
-    btnRec.classList.toggle("recording", active);
-    if (!active) mic.textContent = "";
-    mic.classList.remove("error", "ok");
+  function syncEcoVoiceControls() {
+    const recording = mediaRecorder !== null && mediaRecorder.state === "recording";
+    btnRec.disabled = recording || transcribeBusy;
+    btnStop.disabled = !recording;
+    btnPrev.disabled = recording || transcribeBusy;
+    btnNext.disabled = recording || transcribeBusy;
+    btnRec.classList.toggle("recording", recording);
   }
 
   panel.addEventListener(
@@ -525,7 +525,8 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     if (!mediaRecorder || mediaRecorder.state !== "recording") {
       stream?.getTracks().forEach((t) => t.stop());
       stream = null;
-      setRecordingUi(false);
+      transcribeBusy = false;
+      syncEcoVoiceControls();
       return;
     }
     discardEcoBlob = true;
@@ -533,6 +534,8 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
   };
 
   btnRec.addEventListener("click", async () => {
+    if (transcribeBusy || (mediaRecorder && mediaRecorder.state === "recording")) return;
+
     discardEcoBlob = false;
     mic.textContent = "";
     mic.classList.remove("error", "ok");
@@ -545,45 +548,66 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
       return;
     }
     try {
+      const sessionChunks: BlobPart[] = [];
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : "audio/webm";
-      mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
-      chunks = [];
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size) chunks.push(e.data);
+      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      mediaRecorder = recorder;
+      recorder.ondataavailable = (e) => {
+        if (e.data.size) sessionChunks.push(e.data);
       };
-      mediaRecorder.onstop = async () => {
+      recorder.onstop = async () => {
         clearRecordingLimitTimer();
-        const blob = new Blob(chunks, { type: mediaRecorder?.mimeType || "audio/webm" });
+        const blobType = recorder.mimeType || mime || "audio/webm";
+        const blob = new Blob(sessionChunks, { type: blobType });
         stream?.getTracks().forEach((t) => t.stop());
         stream = null;
         mediaRecorder = null;
-        chunks = [];
-        setRecordingUi(false);
+
+        transcribeBusy = true;
+        syncEcoVoiceControls();
+
         if (discardEcoBlob) {
           discardEcoBlob = false;
+          transcribeBusy = false;
+          syncEcoVoiceControls();
           mic.textContent = "";
           return;
         }
+
         try {
+          if (blob.size === 0) {
+            mic.textContent = "No se capturó audio. Volvé a grabar.";
+            mic.classList.add("error");
+            return;
+          }
           await transcribeAndApply(blob);
         } catch {
           mic.textContent = "Error de red al transcribir.";
           mic.classList.add("error");
+        } finally {
+          transcribeBusy = false;
+          syncEcoVoiceControls();
         }
       };
-      mediaRecorder.start();
+      recorder.start(500);
       clearRecordingLimitTimer();
       recordingLimitTimer = setTimeout(() => {
         recordingLimitTimer = null;
-        if (mediaRecorder?.state === "recording") {
+        const rec = mediaRecorder;
+        if (rec?.state === "recording") {
           mic.textContent = `Límite ${formatMaxRecordingLabel(maxRecordingMin)} alcanzado; deteniendo…`;
-          mediaRecorder.stop();
+          try {
+            rec.requestData();
+          } catch {
+            /* opcional */
+          }
+          rec.stop();
         }
       }, maxRecordingMs);
-      setRecordingUi(true);
+      syncEcoVoiceControls();
     } catch (e) {
       mic.textContent = e instanceof Error ? e.message : "No se pudo usar el micrófono";
       mic.classList.add("error");
@@ -592,7 +616,15 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
 
   btnStop.addEventListener("click", () => {
     clearRecordingLimitTimer();
-    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    const rec = mediaRecorder;
+    if (rec && rec.state !== "inactive") {
+      try {
+        rec.requestData();
+      } catch {
+        /* no es obligatorio en todos los navegadores */
+      }
+      rec.stop();
+    }
   });
 }
 
