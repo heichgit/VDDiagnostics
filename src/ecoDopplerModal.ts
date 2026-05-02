@@ -5,6 +5,7 @@
  */
 
 import { apiFetch, getToken } from "./api";
+import { parseBulkEcoFormTranscript } from "./ecoDopplerBulkVoice";
 import { type EcoVoiceKind, interpretEcoVoice, parseEcoVoiceNavigation } from "./ecoDopplerVoice";
 import { formatMaxRecordingLabel } from "./recordingConfig";
 
@@ -334,6 +335,10 @@ function modalHtml(): string {
           <button type="button" class="btn-ghost eco-voice-order-btn" id="ecoVoicePrev" aria-label="Campo anterior en el orden del formulario">← Anterior</button>
           <button type="button" class="btn-ghost eco-voice-order-btn" id="ecoVoiceNext" aria-label="Campo siguiente en el orden del formulario">Siguiente →</button>
         </div>
+        <label class="eco-voice-bulk-label">
+          <input type="checkbox" id="ecoVoiceBulkMode" />
+          Dictado completo del formulario (palabras clave y orden de fragmentos separados por punto y coma o líneas)
+        </label>
         <div class="eco-voice-actions">
           <button type="button" class="btn-record eco-voice-record" id="ecoVoiceRecord" aria-label="Grabar dictado para el campo activo">Grabar</button>
           <button type="button" class="btn-ghost" id="ecoVoiceStop" disabled>Detener y aplicar</button>
@@ -370,8 +375,9 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
   const btnStop = panel.querySelector<HTMLButtonElement>("#ecoVoiceStop");
   const btnPrev = panel.querySelector<HTMLButtonElement>("#ecoVoicePrev");
   const btnNext = panel.querySelector<HTMLButtonElement>("#ecoVoiceNext");
+  const chkBulk = panel.querySelector<HTMLInputElement>("#ecoVoiceBulkMode");
   const mic = panel.querySelector<HTMLSpanElement>("#ecoVoiceMicStatus");
-  if (!lbl || !btnRec || !btnStop || !mic || !btnPrev || !btnNext) return;
+  if (!lbl || !btnRec || !btnStop || !mic || !btnPrev || !btnNext || !chkBulk) return;
 
   let lastTargetId: string | null = null;
   let orderIdx = 0;
@@ -434,6 +440,7 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     btnStop.disabled = !recording;
     btnPrev.disabled = recording || transcribeBusy;
     btnNext.disabled = recording || transcribeBusy;
+    chkBulk.disabled = recording || transcribeBusy;
     btnRec.classList.toggle("recording", recording);
   }
 
@@ -464,7 +471,7 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     moveOrdered(1);
   });
 
-  async function transcribeAndApply(blob: Blob) {
+  async function postTranscribe(blob: Blob): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
     mic.textContent = "Transcribiendo…";
     mic.classList.remove("error", "ok");
     const fd = new FormData();
@@ -474,11 +481,47 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     const res = await apiFetch("/api/transcribe", { method: "POST", body: fd });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      mic.textContent = typeof data.error === "string" ? data.error : "Error al transcribir";
+      return { ok: false, message: typeof data.error === "string" ? data.error : "Error al transcribir" };
+    }
+    return { ok: true, text: typeof data.text === "string" ? data.text : "" };
+  }
+
+  function applyBulkFromText(text: string) {
+    const getMeta = (fieldId: string) => {
+      const kind = ecoVoiceFieldKind(fieldId);
+      if (!kind) return null;
+      return {
+        kind,
+        opts: kind === "decimal" ? undefined : ecoVoiceOptsForField(fieldId),
+      };
+    };
+    const res = parseBulkEcoFormTranscript(text, ECO_VOICE_ORDER, getMeta);
+    let n = 0;
+    for (const [fid, val] of Object.entries(res.values)) {
+      const el = panel.querySelector<HTMLInputElement | HTMLSelectElement>(`#${fid}`);
+      if (!el) continue;
+      el.value = val;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      n++;
+    }
+    const errPreview =
+      res.errors.length > 0 ? ` · Avisos: ${res.errors.slice(0, 5).join(" · ")}` : "";
+    const leftover =
+      res.leftoverChunkCount > 0 ? ` · ${res.leftoverChunkCount} fragmento(s) sin asignar al orden` : "";
+    mic.textContent = `Formulario: ${n} campo(s) completado(s)${errPreview}${leftover}`;
+    mic.classList.toggle("error", n === 0 && (res.errors.length > 0 || text.trim().length > 0));
+    mic.classList.toggle("ok", n > 0);
+  }
+
+  async function transcribeAndApply(blob: Blob) {
+    const tr = await postTranscribe(blob);
+    if (!tr.ok) {
+      mic.textContent = tr.message;
       mic.classList.add("error");
       return;
     }
-    const text = typeof data.text === "string" ? data.text : "";
+    const text = tr.text;
 
     const nav = parseEcoVoiceNavigation(text);
     if (nav) {
@@ -489,6 +532,11 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
       }
       mic.textContent = nav === "next" ? "Campo siguiente." : "Campo anterior.";
       mic.classList.add("ok");
+      return;
+    }
+
+    if (chkBulk.checked) {
+      applyBulkFromText(text);
       return;
     }
 
@@ -539,13 +587,15 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     discardEcoBlob = false;
     mic.textContent = "";
     mic.classList.remove("error", "ok");
-    if (!lastTargetId || !ecoVoiceFieldKind(lastTargetId)) {
-      focusOrderedAt(0);
-    }
-    if (!lastTargetId || !ecoVoiceFieldKind(lastTargetId)) {
-      mic.textContent = "No hay campos dictables en el formulario.";
-      mic.classList.add("error");
-      return;
+    if (!chkBulk.checked) {
+      if (!lastTargetId || !ecoVoiceFieldKind(lastTargetId)) {
+        focusOrderedAt(0);
+      }
+      if (!lastTargetId || !ecoVoiceFieldKind(lastTargetId)) {
+        mic.textContent = "No hay campos dictables en el formulario.";
+        mic.classList.add("error");
+        return;
+      }
     }
     try {
       const sessionChunks: BlobPart[] = [];
