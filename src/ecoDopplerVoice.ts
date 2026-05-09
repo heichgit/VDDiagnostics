@@ -24,17 +24,173 @@ export function sanitizeEcoDecimal(raw: string): string {
   return s;
 }
 
-/** Primer valor numérico en el texto (tras normalizar “coma” hablada). */
+/** Une parte entera y fracción de un decimal dictado en español. */
+function joinSpokenDecimalParts(intPart: number, fracPart: number): string {
+  if (!Number.isFinite(intPart) || !Number.isFinite(fracPart)) return "";
+  if (fracPart < 0) return "";
+  return `${intPart}.${fracPart}`;
+}
+
+const SP_UNITS: Record<string, number> = {
+  cero: 0,
+  un: 1,
+  uno: 1,
+  una: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+  siete: 7,
+  ocho: 8,
+  nueve: 9,
+  diez: 10,
+  once: 11,
+  doce: 12,
+  trece: 13,
+  catorce: 14,
+  quince: 15,
+  dieciseis: 16,
+  diecisiete: 17,
+  dieciocho: 18,
+  diecinueve: 19,
+};
+
+const SP_TENS: Record<string, number> = {
+  veinte: 20,
+  treinta: 30,
+  cuarenta: 40,
+  cincuenta: 50,
+  sesenta: 60,
+  setenta: 70,
+  ochenta: 80,
+  noventa: 90,
+};
+
+const SP_VEINTI: Record<string, number> = {
+  veintiuno: 21,
+  veintidos: 22,
+  veintitres: 23,
+  veinticuatro: 24,
+  veinticinco: 25,
+  veintiseis: 26,
+  veintisiete: 27,
+  veintiocho: 28,
+  veintinueve: 29,
+};
+
+/** Interpreta un trozo corto como entero (dígitos o palabras en español, 0–99). */
+function parseMixedIntegerSegment(chunk: string): number | null {
+  const t = normPhrase(chunk).trim();
+  if (!t) return null;
+
+  const onlyDigits = t.match(/^\d+$/);
+  if (onlyDigits) {
+    const n = Number.parseInt(onlyDigits[0], 10);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  if (SP_VEINTI[t] !== undefined) return SP_VEINTI[t];
+  if (SP_UNITS[t] !== undefined) return SP_UNITS[t];
+  if (SP_TENS[t] !== undefined) return SP_TENS[t];
+
+  const ty = t.match(/^(.+)\s+y\s+(.+)$/);
+  if (ty) {
+    const tens = SP_TENS[ty[1]];
+    const unit = SP_UNITS[ty[2]];
+    if (tens !== undefined && unit !== undefined) return tens + unit;
+  }
+
+  return null;
+}
+
+/** Toma el último grupo de palabras que forme un número (p. ej. "velocidad uno" → 1). */
+function parseIntegerFromTail(phrase: string): number | null {
+  const tokens = normPhrase(phrase)
+    .split(/\s+/)
+    .filter(Boolean);
+  const maxN = Math.min(4, tokens.length);
+  for (let n = maxN; n >= 1; n--) {
+    const chunk = tokens.slice(-n).join(" ");
+    const v = parseMixedIntegerSegment(chunk);
+    if (v !== null) return v;
+  }
+  return null;
+}
+
+/** Toma el primer grupo de palabras que forme un número (p. ej. "veinticinco ok" → 25). */
+function parseIntegerFromHead(phrase: string): number | null {
+  const tokens = normPhrase(phrase)
+    .split(/\s+/)
+    .filter(Boolean);
+  const maxN = Math.min(4, tokens.length);
+  for (let n = 1; n <= maxN; n++) {
+    const chunk = tokens.slice(0, n).join(" ");
+    const v = parseMixedIntegerSegment(chunk);
+    if (v !== null) return v;
+  }
+  return null;
+}
+
+/**
+ * Decimal tipo "uno coma veinticinco", "1 coma 25" o con palabras de relleno delante.
+ * Usa el primer separador coma/punto entre parte entera y fracción.
+ */
+function parseSpanishDecimalPhrase(raw: string): string | null {
+  const t = normPhrase(raw).trim();
+  if (!t) return null;
+
+  const m = t.match(/^(.*?)\s+(?:coma|punto)\s+(.+)$/i);
+  if (!m) return null;
+
+  const leftRaw = m[1].trim();
+  const rightRaw = m[2].trim();
+  if (!leftRaw || !rightRaw) return null;
+
+  const left = parseIntegerFromTail(leftRaw);
+  const right = parseIntegerFromHead(rightRaw);
+  if (left === null || right === null) return null;
+
+  const joined = joinSpokenDecimalParts(left, right);
+  return joined === "" ? null : joined;
+}
+
+/** Colapsa "1 . 25" → "1.25" tras normalizar comas. */
+function collapseSpacedDigitDecimals(s: string): string {
+  let out = s;
+  let prev: string;
+  do {
+    prev = out;
+    out = out.replace(/(\d+)\s*\.\s*(\d+)/g, "$1.$2");
+  } while (prev !== out);
+  return out;
+}
+
+/** Primer valor numérico en el texto (tras normalizar “coma” hablada y decimales en español). */
 export function parseDecimalFromTranscript(raw: string): string | null {
   let s = stripDiacritics(raw.toLowerCase().trim());
+  if (!s) return null;
+
+  const spoken = parseSpanishDecimalPhrase(s);
+  if (spoken) return spoken;
+
   s = s.replace(/\bcoma\b/g, ".").replace(/,/g, ".");
-  const m = s.match(/(\d+(?:\.\d+)?)/);
-  if (!m) return null;
-  return m[1];
+  s = collapseSpacedDigitDecimals(s);
+
+  const digitMatches = [...s.matchAll(/\d+(?:\.\d{1,6})?/g)];
+  if (digitMatches.length === 0) {
+    const fallback = parseSpanishDecimalPhrase(normPhrase(s));
+    return fallback;
+  }
+  digitMatches.sort((a, b) => b[0].length - a[0].length);
+  return digitMatches[0][0];
 }
 
 function normPhrase(s: string): string {
-  return stripDiacritics(s.toLowerCase()).replace(/\s+/g, " ").trim();
+  return stripDiacritics(s.toLowerCase())
+    .replace(/\s+/g, " ")
+    .replace(/[.,;:!?¡¿]+$/g, "")
+    .trim();
 }
 
 export function matchSelectFromTranscript(transcript: string, opts: readonly EcoSelectOption[]): string | null {

@@ -478,12 +478,24 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     fd.append("audio", blob, "eco.webm");
     const tok = getToken()?.trim();
     if (tok) fd.append("_vdd_jwt", tok);
-    const res = await apiFetch("/api/transcribe", { method: "POST", body: fd });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      return { ok: false, message: typeof data.error === "string" ? data.error : "Error al transcribir" };
+    const ac = new AbortController();
+    const transcribeTimeoutMs = 120_000;
+    const timer = setTimeout(() => ac.abort(), transcribeTimeoutMs);
+    try {
+      const res = await apiFetch("/api/transcribe", { method: "POST", body: fd, signal: ac.signal });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { ok: false, message: typeof data.error === "string" ? data.error : "Error al transcribir" };
+      }
+      return { ok: true, text: typeof data.text === "string" ? data.text : "" };
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        return { ok: false, message: "Tiempo de espera agotado al transcribir. Probá de nuevo." };
+      }
+      return { ok: false, message: "Error de red al transcribir." };
+    } finally {
+      clearTimeout(timer);
     }
-    return { ok: true, text: typeof data.text === "string" ? data.text : "" };
   }
 
   function applyBulkFromText(text: string) {
@@ -619,15 +631,12 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
         transcribeBusy = true;
         syncEcoVoiceControls();
 
-        if (discardEcoBlob) {
-          discardEcoBlob = false;
-          transcribeBusy = false;
-          syncEcoVoiceControls();
-          mic.textContent = "";
-          return;
-        }
-
         try {
+          if (discardEcoBlob) {
+            discardEcoBlob = false;
+            mic.textContent = "";
+            return;
+          }
           if (blob.size === 0) {
             mic.textContent = "No se capturó audio. Volvé a grabar.";
             mic.classList.add("error");
@@ -635,7 +644,7 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
           }
           await transcribeAndApply(blob);
         } catch {
-          mic.textContent = "Error de red al transcribir.";
+          mic.textContent = "Error inesperado al procesar el audio.";
           mic.classList.add("error");
         } finally {
           transcribeBusy = false;
