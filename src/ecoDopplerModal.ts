@@ -360,6 +360,8 @@ let lastVoiceCapability = false;
 let lastMaxRecordingMin = 15;
 /** Detiene grabación Eco sin transcribir (cierre de modal). */
 let ecoVoiceAbortRecording: (() => void) | null = null;
+/** Libera estado de UI de dictado al abrir el modal (p. ej. transcribeBusy colgado). */
+let ecoVoiceResetUi: (() => void) | null = null;
 
 function wireNumeric(panel: HTMLElement, id: string) {
   const el = panel.querySelector<HTMLInputElement>(`#${id}`);
@@ -438,11 +440,17 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     const recording = mediaRecorder !== null && mediaRecorder.state === "recording";
     btnRec.disabled = recording || transcribeBusy;
     btnStop.disabled = !recording;
-    btnPrev.disabled = recording || transcribeBusy;
-    btnNext.disabled = recording || transcribeBusy;
+    /** Navegación entre campos independiente de la transcripción (solo bloqueada al grabar). */
+    btnPrev.disabled = recording;
+    btnNext.disabled = recording;
     chkBulk.disabled = recording || transcribeBusy;
     btnRec.classList.toggle("recording", recording);
   }
+
+  ecoVoiceResetUi = () => {
+    transcribeBusy = false;
+    syncEcoVoiceControls();
+  };
 
   panel.addEventListener(
     "focusin",
@@ -833,6 +841,7 @@ export function openEcoDopplerModal(): void {
 
   overlay.hidden = false;
   overlay.setAttribute("aria-hidden", "false");
+  ecoVoiceResetUi?.();
   panel.querySelector<HTMLInputElement>("#eco_velLLRap")?.focus();
 }
 
