@@ -343,10 +343,8 @@ function modalHtml(): string {
         </div>
         <label class="eco-voice-bulk-label">
           <input type="checkbox" id="ecoVoiceBulkMode" aria-describedby="ecoVoiceBulkHint" />
-          <span class="eco-voice-bulk-text">
-            <span class="eco-voice-bulk-title">Modo dictado completo</span>
-            <span id="ecoVoiceBulkHint" class="eco-voice-bulk-sub">Activá esta opción si querés rellenar <strong>varios campos</strong> en una sola grabación, con palabras clave o fragmentos separados por punto y coma o por líneas. Si está desmarcado, cada grabación completa solo el campo activo.</span>
-          </span>
+          <span class="eco-voice-bulk-title">Modo dictado completo</span>
+          <span id="ecoVoiceBulkHint" class="eco-voice-bulk-sub">Varios campos en una grabación (palabras clave o fragmentos con ; o líneas). Desmarcado: solo el campo activo.</span>
         </label>
         <span id="ecoVoiceMicStatus" class="eco-voice-status muted" role="status"></span>
       </div>
