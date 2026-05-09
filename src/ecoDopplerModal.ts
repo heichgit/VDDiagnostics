@@ -331,18 +331,23 @@ function modalHtml(): string {
     <div class="eco-voice-strip" id="ecoVoiceStrip" hidden>
       <div class="eco-voice-strip-inner">
         <span id="ecoVoiceFieldLabel" class="eco-voice-target muted">Orden del formulario — tocá un campo o usá «Siguiente» / «Anterior»</span>
-        <div class="eco-voice-order-row">
-          <button type="button" class="btn-ghost eco-voice-order-btn" id="ecoVoicePrev" aria-label="Campo anterior en el orden del formulario">← Anterior</button>
-          <button type="button" class="btn-ghost eco-voice-order-btn" id="ecoVoiceNext" aria-label="Campo siguiente en el orden del formulario">Siguiente →</button>
+        <div class="eco-voice-toolbar">
+          <div class="eco-voice-order-row">
+            <button type="button" class="btn-ghost eco-voice-order-btn" id="ecoVoicePrev" aria-label="Campo anterior en el orden del formulario">← Anterior</button>
+            <button type="button" class="btn-ghost eco-voice-order-btn" id="ecoVoiceNext" aria-label="Campo siguiente en el orden del formulario">Siguiente →</button>
+          </div>
+          <div class="eco-voice-actions">
+            <button type="button" class="btn-record eco-voice-record" id="ecoVoiceRecord" aria-label="Grabar dictado para el campo activo">Grabar</button>
+            <button type="button" class="btn-ghost" id="ecoVoiceStop" disabled>Detener y aplicar</button>
+          </div>
         </div>
         <label class="eco-voice-bulk-label">
-          <input type="checkbox" id="ecoVoiceBulkMode" />
-          Dictado completo del formulario (palabras clave y orden de fragmentos separados por punto y coma o líneas)
+          <input type="checkbox" id="ecoVoiceBulkMode" aria-describedby="ecoVoiceBulkHint" />
+          <span class="eco-voice-bulk-text">
+            <span class="eco-voice-bulk-title">Modo dictado completo</span>
+            <span id="ecoVoiceBulkHint" class="eco-voice-bulk-sub">Activá esta opción si querés rellenar <strong>varios campos</strong> en una sola grabación, con palabras clave o fragmentos separados por punto y coma o por líneas. Si está desmarcado, cada grabación completa solo el campo activo.</span>
+          </span>
         </label>
-        <div class="eco-voice-actions">
-          <button type="button" class="btn-record eco-voice-record" id="ecoVoiceRecord" aria-label="Grabar dictado para el campo activo">Grabar</button>
-          <button type="button" class="btn-ghost" id="ecoVoiceStop" disabled>Detener y aplicar</button>
-        </div>
         <span id="ecoVoiceMicStatus" class="eco-voice-status muted" role="status"></span>
       </div>
     </div>
