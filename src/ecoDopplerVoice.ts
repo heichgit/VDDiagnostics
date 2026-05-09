@@ -36,6 +36,8 @@ const SP_UNITS: Record<string, number> = {
   un: 1,
   uno: 1,
   una: 1,
+  cien: 100,
+  ciento: 100,
   dos: 2,
   tres: 3,
   cuatro: 4,
@@ -79,7 +81,7 @@ const SP_VEINTI: Record<string, number> = {
   veintinueve: 29,
 };
 
-/** Interpreta un trozo corto como entero (dígitos o palabras en español, 0–99). */
+/** Interpreta un trozo corto como entero (dígitos o palabras en español). */
 function parseMixedIntegerSegment(chunk: string): number | null {
   const t = normPhrase(chunk).trim();
   if (!t) return null;
@@ -88,6 +90,15 @@ function parseMixedIntegerSegment(chunk: string): number | null {
   if (onlyDigits) {
     const n = Number.parseInt(onlyDigits[0], 10);
     return Number.isFinite(n) ? n : null;
+  }
+
+  /** Trozos tipo "45", "mmHg 12" → primer entero de hasta 4 cifras. */
+  if (/\d/.test(t)) {
+    const embedded = t.match(/\b(\d{1,4})\b/);
+    if (embedded) {
+      const n = Number.parseInt(embedded[1], 10);
+      if (Number.isFinite(n)) return n;
+    }
   }
 
   if (SP_VEINTI[t] !== undefined) return SP_VEINTI[t];
@@ -109,7 +120,7 @@ function parseIntegerFromTail(phrase: string): number | null {
   const tokens = normPhrase(phrase)
     .split(/\s+/)
     .filter(Boolean);
-  const maxN = Math.min(4, tokens.length);
+  const maxN = Math.min(6, tokens.length);
   for (let n = maxN; n >= 1; n--) {
     const chunk = tokens.slice(-n).join(" ");
     const v = parseMixedIntegerSegment(chunk);
@@ -123,12 +134,29 @@ function parseIntegerFromHead(phrase: string): number | null {
   const tokens = normPhrase(phrase)
     .split(/\s+/)
     .filter(Boolean);
-  const maxN = Math.min(4, tokens.length);
+  const maxN = Math.min(6, tokens.length);
   for (let n = 1; n <= maxN; n++) {
     const chunk = tokens.slice(0, n).join(" ");
     const v = parseMixedIntegerSegment(chunk);
     if (v !== null) return v;
   }
+  return null;
+}
+
+/**
+ * Entero sin parte decimal explícita: "80", "ochenta", "el valor es cinco",
+ * "presión 45", etc. Prioriza el sufijo final (respuesta típica del dictado).
+ */
+function parseSpanishIntegerFromFullPhrase(raw: string): number | null {
+  const t = normPhrase(raw);
+  if (!t) return null;
+
+  let v = parseIntegerFromTail(t);
+  if (v !== null) return v;
+
+  v = parseIntegerFromHead(t);
+  if (v !== null) return v;
+
   return null;
 }
 
@@ -171,23 +199,27 @@ export function parseDecimalFromTranscript(raw: string): string | null {
   let s = stripDiacritics(raw.toLowerCase().trim());
   if (!s) return null;
 
-  const spoken = parseSpanishDecimalPhrase(s);
-  if (spoken) return spoken;
+  const spokenDec = parseSpanishDecimalPhrase(s);
+  if (spokenDec) return spokenDec;
 
   s = s.replace(/\bcoma\b/g, ".").replace(/,/g, ".");
   s = collapseSpacedDigitDecimals(s);
 
   const digitMatches = [...s.matchAll(/\d+(?:\.\d{1,6})?/g)];
-  if (digitMatches.length === 0) {
-    const fallback = parseSpanishDecimalPhrase(normPhrase(s));
-    return fallback;
+  if (digitMatches.length > 0) {
+    digitMatches.sort((a, b) => b[0].length - a[0].length);
+    return digitMatches[0][0];
   }
-  digitMatches.sort((a, b) => b[0].length - a[0].length);
-  return digitMatches[0][0];
+
+  const intWord = parseSpanishIntegerFromFullPhrase(s);
+  if (intWord !== null) return String(intWord);
+
+  return parseSpanishDecimalPhrase(normPhrase(s));
 }
 
 function normPhrase(s: string): string {
   return stripDiacritics(s.toLowerCase())
+    .replace(/\u00a0/g, " ")
     .replace(/\s+/g, " ")
     .replace(/[.,;:!?¡¿]+$/g, "")
     .trim();
