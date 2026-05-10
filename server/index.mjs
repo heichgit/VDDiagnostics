@@ -48,6 +48,12 @@ function maxRecordingMinutesFromEnv() {
   return Math.min(Math.max(parsed, 0.5), 120);
 }
 
+function ecoBulkChunkKeywordFromEnv() {
+  const raw = process.env.ECO_BULK_CHUNK_KEYWORD;
+  if (raw == null || String(raw).trim() === "") return "siguiente";
+  return String(raw).trim().slice(0, 64);
+}
+
 function diagnosticosDbMode() {
   if (isSqlConfigured()) return "sql";
   if (getStorageConnectionString()) return "blob";
@@ -58,6 +64,7 @@ app.get("/api/config", (_req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
   res.json({
     maxRecordingMinutes: maxRecordingMinutesFromEnv(),
+    ecoBulkChunkKeyword: ecoBulkChunkKeywordFromEnv(),
     diagnosticosDb: diagnosticosDbMode(),
   });
 });
@@ -79,13 +86,13 @@ function extractAccessToken(req) {
 function requireAuth(req, res, next) {
   const raw = extractAccessToken(req);
   if (!raw) {
-    return res.status(401).json({ error: "Se requiere autenticación" });
+    return res.status(401).json({ error: "Se requiere autenticaci?n" });
   }
   try {
     req.auth = verifyToken(raw);
     next();
   } catch {
-    return res.status(401).json({ error: "Sesión inválida o expirada" });
+    return res.status(401).json({ error: "Sesi?n inv?lida o expirada" });
   }
 }
 
@@ -125,7 +132,7 @@ app.post("/api/auth/login", async (req, res) => {
     const email = String(req.body?.email ?? "").trim();
     const password = String(req.body?.password ?? "");
     if (!email || !password) {
-      return res.status(400).json({ error: "Email y contraseña requeridos" });
+      return res.status(400).json({ error: "Email y contrase?a requeridos" });
     }
     const user = await users.verifyCredentials(email, password);
     if (!user) {
@@ -151,7 +158,7 @@ app.post("/api/auth/me", (req, res) => {
     const auth = verifyToken(raw);
     return res.json({ id: auth.sub, email: auth.email, roles: auth.roles });
   } catch {
-    return res.status(401).json({ error: "Token inválido o expirado" });
+    return res.status(401).json({ error: "Token inv?lido o expirado" });
   }
 });
 
@@ -188,7 +195,7 @@ app.post("/api/users", requireAuth, async (req, res) => {
     res.status(201).json(created);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const code = msg.includes("ya está") ? 409 : 400;
+    const code = msg.includes("ya est?") ? 409 : 400;
     res.status(code).json({ error: msg });
   }
 });
@@ -200,7 +207,7 @@ app.post(
   (req, res, next) => {
     if (!canTranscribe(req.auth.roles)) {
       return res.status(403).json({
-        error: "Sin permiso para transcripción por voz (se requieren roles usuario y transcripcion)",
+        error: "Sin permiso para transcripci?n por voz (se requieren roles usuario y transcripcion)",
       });
     }
     next();
@@ -237,7 +244,7 @@ app.post(
 
 app.get("/api/diagnosticos", requireAuth, async (req, res) => {
   if (!canReadDiagnosticos(req.auth.roles)) {
-    return res.status(403).json({ error: "Sin permiso para ver diagnósticos" });
+    return res.status(403).json({ error: "Sin permiso para ver diagn?sticos" });
   }
   try {
     const list = await readDiagnoses();
@@ -252,7 +259,7 @@ app.get("/api/diagnosticos", requireAuth, async (req, res) => {
 app.post("/api/sugerir-tipo-diagnostico", requireAuth, async (req, res) => {
   if (!canWriteDiagnostico(req.auth.roles)) {
     return res.status(403).json({
-      error: "Sin permiso (se requiere rol usuario o admin para esta acción)",
+      error: "Sin permiso (se requiere rol usuario o admin para esta acci?n)",
     });
   }
   try {
@@ -270,7 +277,7 @@ app.post("/api/sugerir-tipo-diagnostico", requireAuth, async (req, res) => {
 
 app.post("/api/diagnosticos/list", requireAuth, async (req, res) => {
   if (!canReadDiagnosticos(req.auth.roles)) {
-    return res.status(403).json({ error: "Sin permiso para ver diagnósticos" });
+    return res.status(403).json({ error: "Sin permiso para ver diagn?sticos" });
   }
   try {
     const list = await readDiagnoses();
@@ -283,7 +290,7 @@ app.post("/api/diagnosticos/list", requireAuth, async (req, res) => {
 
 app.post("/api/diagnosticos", requireAuth, async (req, res) => {
   if (!canWriteDiagnostico(req.auth.roles)) {
-    return res.status(403).json({ error: "Sin permiso para crear diagnósticos" });
+    return res.status(403).json({ error: "Sin permiso para crear diagn?sticos" });
   }
   const {
     pacienteRef = "",
@@ -295,7 +302,7 @@ app.post("/api/diagnosticos", requireAuth, async (req, res) => {
   } = req.body ?? {};
 
   if (!String(transcripcion).trim() && !String(notas).trim()) {
-    return res.status(400).json({ error: "Indica transcripción o notas" });
+    return res.status(400).json({ error: "Indica transcripci?n o notas" });
   }
 
   try {
@@ -347,5 +354,5 @@ await ensureDataFile();
 await users.bootstrapAdminIfEmpty();
 app.listen(PORT, () => {
   console.log(`API en http://127.0.0.1:${PORT}`);
-  if (isProd) console.log(`Sirviendo estáticos desde ${DIST}`);
+  if (isProd) console.log(`Sirviendo est?ticos desde ${DIST}`);
 });

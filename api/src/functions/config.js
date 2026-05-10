@@ -10,6 +10,12 @@ function maxRecordingMinutesFromEnv() {
   return Math.min(Math.max(parsed, 0.5), 120);
 }
 
+function ecoBulkChunkKeywordFromEnv() {
+  const raw = process.env.ECO_BULK_CHUNK_KEYWORD;
+  if (raw == null || String(raw).trim() === "") return "siguiente";
+  return String(raw).trim().slice(0, 64);
+}
+
 /** Para comprobar en producción si la API ve SQL o blob (sin exponer secretos). */
 function diagnosticosDbMode() {
   if (isSqlConfigured()) return "sql";
@@ -25,6 +31,7 @@ app.http("publicConfig", {
     return {
       jsonBody: {
         maxRecordingMinutes: maxRecordingMinutesFromEnv(),
+        ecoBulkChunkKeyword: ecoBulkChunkKeywordFromEnv(),
         diagnosticosDb: diagnosticosDbMode(),
       },
       headers: {

@@ -6,6 +6,7 @@
 
 import { apiFetch, getToken } from "./api";
 import { parseBulkEcoFormTranscript } from "./ecoDopplerBulkVoice";
+import { getEcoBulkChunkKeyword } from "./recordingConfig";
 import { type EcoVoiceKind, interpretEcoVoice, parseEcoVoiceNavigation } from "./ecoDopplerVoice";
 import { formatMaxRecordingLabel } from "./recordingConfig";
 
@@ -344,7 +345,7 @@ function modalHtml(): string {
         <label class="eco-voice-bulk-label">
           <input type="checkbox" id="ecoVoiceBulkMode" aria-describedby="ecoVoiceBulkHint" />
           <span class="eco-voice-bulk-title">Modo dictado completo</span>
-          <span id="ecoVoiceBulkHint" class="eco-voice-bulk-sub">Varios campos en una grabación (palabras clave o fragmentos con ; o líneas). Desmarcado: solo el campo activo.</span>
+          <span id="ecoVoiceBulkHint" class="eco-voice-bulk-sub">Varios campos en una grabación: palabras clave por válvula, separadores ; o líneas, o la palabra de corte configurada en el servidor (por defecto «siguiente» entre fragmentos). Desmarcado: solo el campo activo.</span>
         </label>
         <span id="ecoVoiceMicStatus" class="eco-voice-status muted" role="status"></span>
       </div>
@@ -518,7 +519,7 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
         opts: kind === "decimal" ? undefined : ecoVoiceOptsForField(fieldId),
       };
     };
-    const res = parseBulkEcoFormTranscript(text, ECO_VOICE_ORDER, getMeta);
+    const res = parseBulkEcoFormTranscript(text, ECO_VOICE_ORDER, getMeta, getEcoBulkChunkKeyword());
     let n = 0;
     for (const [fid, val] of Object.entries(res.values)) {
       const el = panel.querySelector<HTMLInputElement | HTMLSelectElement>(`#${fid}`);

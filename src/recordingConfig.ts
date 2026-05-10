@@ -3,10 +3,20 @@
  * 1) GET /api/config → maxRecordingMinutes (Azure: MAX_RECORDING_MINUTES en Application settings)
  * 2) Si falla: VITE_MAX_RECORDING_MINUTES en build
  * 3) Por defecto: 5
+ *
+ * Palabra para partir el dictado masivo Eco Doppler (además de ; y líneas):
+ * 1) GET /api/config → ecoBulkChunkKeyword (Azure: ECO_BULK_CHUNK_KEYWORD)
+ * 2) Si falla: VITE_ECO_BULK_CHUNK_KEYWORD en build
+ * 3) Por defecto: "siguiente". Cadena vacía desactiva el corte por palabra.
  */
 
 /** Solo se guarda si la API devolvió un valor válido (nunca el fallback de Vite). */
 let cachedMinutes: number | null = null;
+
+/** `undefined` = aún no vino del servidor; si es string (incluso "") viene de la API. */
+let cachedEcoBulkChunkKeyword: string | undefined = undefined;
+
+const DEFAULT_ECO_BULK_CHUNK_KEYWORD = "siguiente";
 
 function clampMinutes(n: number): number {
   if (!Number.isFinite(n) || n <= 0) return 5;
@@ -20,6 +30,19 @@ function fallbackFromVite(): number {
       ? Number.parseFloat(String(raw).trim())
       : Number.NaN;
   return clampMinutes(parsed);
+}
+
+function fallbackEcoBulkChunkKeywordFromVite(): string {
+  const raw = import.meta.env.VITE_ECO_BULK_CHUNK_KEYWORD;
+  if (raw == null || String(raw).trim() === "") return DEFAULT_ECO_BULK_CHUNK_KEYWORD;
+  return String(raw).trim().slice(0, 64);
+}
+
+function ingestEcoBulkKeywordFromJson(data: unknown): void {
+  if (data == null || typeof data !== "object") return;
+  const k = (data as { ecoBulkChunkKeyword?: unknown }).ecoBulkChunkKeyword;
+  if (typeof k !== "string") return;
+  cachedEcoBulkChunkKeyword = k.trim().slice(0, 64);
 }
 
 function parseMaxFromJson(data: unknown): number | null {
@@ -42,7 +65,10 @@ function configUrl(): string {
  * “pegado” en 5 si el primer intento falló (HTML, cold start, etc.).
  */
 export async function loadRecordingConfig(options?: { force?: boolean }): Promise<number> {
-  if (options?.force) cachedMinutes = null;
+  if (options?.force) {
+    cachedMinutes = null;
+    cachedEcoBulkChunkKeyword = undefined;
+  }
   if (cachedMinutes != null) return cachedMinutes;
 
   const maxAttempts = 3;
@@ -67,6 +93,7 @@ export async function loadRecordingConfig(options?: { force?: boolean }): Promis
       }
 
       const parsed = parseMaxFromJson(data);
+      ingestEcoBulkKeywordFromJson(data);
       if (parsed != null) {
         cachedMinutes = parsed;
         return cachedMinutes;
@@ -95,4 +122,13 @@ export function getMaxRecordingMs(): number {
 export function formatMaxRecordingLabel(minutes: number): string {
   if (Number.isInteger(minutes)) return `${minutes} min`;
   return `${minutes.toLocaleString("es", { maximumFractionDigits: 1 })} min`;
+}
+
+/**
+ * Palabra que parte el texto en modo dictado completo Eco Doppler (límites de palabra).
+ * Vacío = no cortar por palabra (solo `;`, saltos de línea y reglas largas).
+ */
+export function getEcoBulkChunkKeyword(): string {
+  if (cachedEcoBulkChunkKeyword !== undefined) return cachedEcoBulkChunkKeyword;
+  return fallbackEcoBulkChunkKeywordFromVite();
 }

@@ -1,6 +1,7 @@
 /**
  * Interpreta un único dictado largo y reparte fragmentos a los campos Eco Doppler.
- * 1) Fragmentos delimitados por ; o salto de línea (y en texto largo por ". ").
+ * 1) Fragmentos delimitados por palabra configurable (p. ej. "siguiente"), por ; o salto de línea
+ *    (y en texto largo por ". ").
  * 2) Cada fragmento se intenta asociar por palabras clave al campo correcto.
  * 3) Los fragmentos sin palabra clave se asignan en orden al primer campo aún vacío.
  */
@@ -175,21 +176,38 @@ const FIELD_TRIGGERS: TriggerRow[] = [
   },
 ];
 
-function splitIntoChunks(raw: string): string[] {
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function splitIntoChunks(raw: string, keywordSeparator: string): string[] {
   const t = raw.replace(/\r\n/g, "\n").trim();
   if (!t) return [];
-  let parts = t
-    .split(/\s*[;\n]+\s*/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (parts.length === 1 && parts[0].length > 120) {
-    const sub = parts[0]
-      .split(/\.\s+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (sub.length > 1) parts = sub;
+
+  let segments: string[] = [t];
+  const kw = keywordSeparator.trim();
+  if (kw.length > 0) {
+    try {
+      const re = new RegExp(`\\b${escapeRegExp(kw)}\\b`, "gi");
+      segments = t.split(re).map((s) => s.trim()).filter(Boolean);
+    } catch {
+      segments = [t];
+    }
   }
-  return parts;
+
+  const out: string[] = [];
+  for (const seg of segments) {
+    let parts = seg.split(/\s*[;\n]+\s*/).map((s) => s.trim()).filter(Boolean);
+    if (parts.length === 1 && parts[0].length > 120) {
+      const sub = parts[0]
+        .split(/\.\s+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (sub.length > 1) parts = sub;
+    }
+    out.push(...parts);
+  }
+  return out;
 }
 
 function matchChunkToField(chunk: string): { id: string; pattern: RegExp } | null {
@@ -205,12 +223,13 @@ export function parseBulkEcoFormTranscript(
   raw: string,
   fieldOrder: readonly string[],
   getMeta: (fieldId: string) => BulkFieldMeta | null,
+  chunkKeyword = "siguiente",
 ): BulkParseResult {
   const values: Record<string, string> = {};
   const errors: string[] = [];
   const neverMatched: string[] = [];
 
-  const chunks = splitIntoChunks(raw);
+  const chunks = splitIntoChunks(raw, chunkKeyword);
   for (const chunk of chunks) {
     const c = chunk.trim();
     if (!c) continue;
