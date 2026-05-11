@@ -130,20 +130,24 @@ function renderLogin(msg = "") {
         <h1>Ingreso</h1>
         <p class="subtitle">Diagnóstico por imagen médica</p>
         <p class="status error" id="loginErr">${escapeHtml(msg)}</p>
-        <label for="loginEmail">Email</label>
-        <input id="loginEmail" type="email" autocomplete="username" />
-        <label for="loginPass">Contraseña</label>
-        <input id="loginPass" type="password" autocomplete="current-password" />
-        <div class="actions">
-          <button type="button" class="btn-primary" id="loginBtn">Entrar</button>
-        </div>
+        <form id="loginForm" class="login-form" novalidate>
+          <label for="loginEmail">Email</label>
+          <input id="loginEmail" type="email" name="email" autocomplete="username" />
+          <label for="loginPass">Contraseña</label>
+          <input id="loginPass" type="password" name="password" autocomplete="current-password" />
+          <div class="actions">
+            <button type="submit" class="btn-primary" id="loginBtn">Entrar</button>
+          </div>
+        </form>
       </div>
     </div>
   `;
   const err = root.querySelector<HTMLParagraphElement>("#loginErr")!;
   const email = root.querySelector<HTMLInputElement>("#loginEmail")!;
   const pass = root.querySelector<HTMLInputElement>("#loginPass")!;
-  root.querySelector<HTMLButtonElement>("#loginBtn")!.addEventListener("click", async () => {
+  const form = root.querySelector<HTMLFormElement>("#loginForm")!;
+
+  async function tryLogin() {
     err.textContent = "";
     err.className = "status";
     const r = await loginRequest(email.value.trim(), pass.value);
@@ -162,6 +166,11 @@ function renderLogin(msg = "") {
       return;
     }
     await mountApp(me);
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    void tryLogin();
   });
 }
 

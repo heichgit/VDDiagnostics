@@ -6,9 +6,8 @@
 
 import { apiFetch, getToken } from "./api";
 import { parseBulkEcoFormTranscript } from "./ecoDopplerBulkVoice";
-import { getEcoBulkChunkKeyword } from "./recordingConfig";
 import { type EcoVoiceKind, interpretEcoVoice, parseEcoVoiceNavigation } from "./ecoDopplerVoice";
-import { formatMaxRecordingLabel } from "./recordingConfig";
+import { formatMaxRecordingLabel, getEcoBulkChunkKeyword } from "./recordingConfig";
 
 export const ECO_DOPPLER_STORAGE_KEY = "vdd_eco_doppler_form";
 
@@ -145,6 +144,19 @@ function esc(s: string): string {
 
 function optsHtml(rows: { id: string; descripcion: string }[]): string {
   return rows.map((r) => `<option value="${esc(r.id)}">${esc(r.descripcion)}</option>`).join("");
+}
+
+/** Texto de ayuda del modo masivo con la palabra de corte actual (API / Vite / vacío). */
+function syncEcoBulkHint(panel: HTMLElement): void {
+  const el = panel.querySelector("#ecoVoiceBulkHint");
+  if (!(el instanceof HTMLElement)) return;
+  const kw = getEcoBulkChunkKeyword().trim();
+  if (kw === "") {
+    el.textContent =
+      "Varios campos en una grabación: palabras clave por válvula y separadores ; o líneas (corte oral por palabra desactivado). Desmarcado: solo el campo activo.";
+  } else {
+    el.textContent = `Varios campos en una grabación: palabras clave por válvula, separadores ; o líneas, u oralmente «${kw}» entre fragmentos. Desmarcado: solo el campo activo.`;
+  }
 }
 
 export function validateEcoDopplerForm(s: EcoDopplerStored): string | null {
@@ -345,7 +357,7 @@ function modalHtml(): string {
         <label class="eco-voice-bulk-label">
           <input type="checkbox" id="ecoVoiceBulkMode" aria-describedby="ecoVoiceBulkHint" />
           <span class="eco-voice-bulk-title">Modo dictado completo</span>
-          <span id="ecoVoiceBulkHint" class="eco-voice-bulk-sub">Varios campos en una grabación: palabras clave por válvula, separadores ; o líneas, o la palabra de corte configurada en el servidor (por defecto «siguiente» entre fragmentos). Desmarcado: solo el campo activo.</span>
+          <span id="ecoVoiceBulkHint" class="eco-voice-bulk-sub"></span>
         </label>
         <span id="ecoVoiceMicStatus" class="eco-voice-status muted" role="status"></span>
       </div>
@@ -815,6 +827,8 @@ export function ensureEcoDopplerModalMounted(canVoiceDictate = lastVoiceCapabili
     wireEcoVoiceStrip(panel2, lastMaxRecordingMin);
     wiredVoice = true;
   }
+
+  syncEcoBulkHint(panel2);
 }
 
 export function openEcoDopplerModal(): void {
@@ -846,6 +860,7 @@ export function openEcoDopplerModal(): void {
   overlay.hidden = false;
   overlay.setAttribute("aria-hidden", "false");
   ecoVoiceResetUi?.();
+  syncEcoBulkHint(panel as HTMLElement);
   panel.querySelector<HTMLInputElement>("#eco_velLLRap")?.focus();
 }
 
