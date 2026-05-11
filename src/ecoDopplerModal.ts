@@ -440,6 +440,23 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     focusOrderedAt(orderIdx + delta);
   }
 
+  /** Tras dictado aplicado con éxito: foco en el campo siguiente al último completado (orden del formulario). */
+  function focusNextAfterCompletedField(fieldId: string): void {
+    const ix = ECO_VOICE_ORDER.indexOf(fieldId);
+    if (ix < 0) return;
+    focusOrderedAt(ix + 1);
+  }
+
+  function focusNextAfterBulkCompleted(fieldIds: string[]): void {
+    let maxIx = -1;
+    for (const fid of fieldIds) {
+      const ix = ECO_VOICE_ORDER.indexOf(fid);
+      if (ix >= 0) maxIx = Math.max(maxIx, ix);
+    }
+    if (maxIx < 0) return;
+    focusOrderedAt(maxIx + 1);
+  }
+
   function updateTargetLabel() {
     if (!lastTargetId) {
       lbl.textContent = `Orden del formulario (${nOrder} campos). «Siguiente» / «Anterior», o tocá un campo. Por voz: «siguiente campo» / «campo anterior».`;
@@ -522,7 +539,7 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     }
   }
 
-  function applyBulkFromText(text: string) {
+  function applyBulkFromText(text: string): number {
     const getMeta = (fieldId: string) => {
       const kind = ecoVoiceFieldKind(fieldId);
       if (!kind) return null;
@@ -533,6 +550,7 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     };
     const res = parseBulkEcoFormTranscript(text, ECO_VOICE_ORDER, getMeta, getEcoBulkChunkKeyword());
     let n = 0;
+    const appliedIds: string[] = [];
     for (const [fid, val] of Object.entries(res.values)) {
       const el = panel.querySelector<HTMLInputElement | HTMLSelectElement>(`#${fid}`);
       if (!el) continue;
@@ -540,6 +558,7 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
       n++;
+      appliedIds.push(fid);
     }
     const errPreview =
       res.errors.length > 0 ? ` · Avisos: ${res.errors.slice(0, 5).join(" · ")}` : "";
@@ -548,6 +567,8 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     mic.textContent = `Formulario: ${n} campo(s) completado(s)${errPreview}${leftover}`;
     mic.classList.toggle("error", n === 0 && (res.errors.length > 0 || text.trim().length > 0));
     mic.classList.toggle("ok", n > 0);
+    if (n > 0) focusNextAfterBulkCompleted(appliedIds);
+    return n;
   }
 
   async function transcribeAndApply(blob: Blob) {
@@ -599,6 +620,7 @@ function wireEcoVoiceStrip(panel: HTMLElement, maxRecordingMin: number): void {
     el.value = r.value;
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
+    focusNextAfterCompletedField(tid);
     const preview = text.trim().slice(0, 72);
     mic.textContent = `Aplicado: «${preview}${text.trim().length > 72 ? "…" : ""}»`;
     mic.classList.add("ok");
